@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { dayApi } from '../api.js'
+import { dayApi, scoringApi } from '../api.js'
+import { startRecording } from '../utils/recorder.js'
 
 const props = defineProps({ date: String })
 const router = useRouter()
@@ -25,6 +26,75 @@ const playbackRate = ref(1)
 const rates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
 const sentences = computed(() => day.value?.subtitle?.sentences || [])
+const scoreMap = ref(new Map())
+let recordingController = null
+
+watch(
+  sentences,
+  (list) => {
+    list.forEach((_, i) => {
+      if (!scoreMap.value.has(i)) {
+        scoreMap.value.set(i, reactive({ status: 'idle', result: null, error: '' }))
+      }
+    })
+  },
+  { immediate: true },
+)
+
+function scoreState(i) {
+  return scoreMap.value.get(i) || { status: 'idle', result: null, error: '' }
+}
+
+async function startRepeat(i) {
+  if (recordingController) {
+    try { await recordingController.stop() } catch {}
+    recordingController = null
+  }
+  const state = scoreState(i)
+  state.error = ''
+  state.result = null
+  state.status = 'recording'
+  videoEl.value?.pause()
+  try {
+    recordingController = await startRecording()
+  } catch (e) {
+    state.status = 'idle'
+    state.error = e.message
+  }
+}
+
+async function stopRepeat(i, reference) {
+  const state = scoreState(i)
+  if (!recordingController) {
+    state.status = 'idle'
+    return
+  }
+  state.status = 'scoring'
+  try {
+    const blob = await recordingController.stop()
+    recordingController = null
+    const result = await scoringApi.score(blob, reference)
+    state.result = result
+    state.status = 'result'
+  } catch (e) {
+    state.status = 'idle'
+    state.error = e.detail || e.message
+  }
+}
+
+function toggleRepeat(i, s) {
+  if (scoreState(i).status === 'recording') {
+    stopRepeat(i, s.en)
+  } else {
+    startRepeat(i)
+  }
+}
+
+function wordScoreClass(score) {
+  if (score >= 80) return 'word-good'
+  if (score >= 60) return 'word-ok'
+  return 'word-bad'
+}
 
 const currentIndex = computed(() => {
   const list = sentences.value
@@ -175,6 +245,10 @@ onBeforeUnmount(() => {
   if (v) v.pause()
   window.removeEventListener('mousemove', onDrag)
   window.removeEventListener('mouseup', stopDrag)
+  if (recordingController) {
+    recordingController.stop().catch(() => {})
+    recordingController = null
+  }
 })
 </script>
 
@@ -259,6 +333,40 @@ onBeforeUnmount(() => {
                 <span class="w">{{ w.w }}</span>
                 <span v-if="w.phonetic" class="phonetic">/{{ w.phonetic }}/</span>
                 <span v-if="w.note" class="note">{{ w.note }}</span>
+              </div>
+            </div>
+
+            <div class="repeat-row">
+              <button
+                class="btn btn-sm repeat-btn"
+                :class="scoreState(i).status === 'recording' ? 'btn-secondary recording' : 'btn-primary'"
+                :disabled="scoreState(i).status === 'scoring'"
+                @click.stop="toggleRepeat(i, s)"
+              >
+                <span v-if="scoreState(i).status === 'recording'">停止</span>
+                <span v-else-if="scoreState(i).status === 'scoring'">评分中…</span>
+                <span v-else-if="scoreState(i).result">重新跟读</span>
+                <span v-else>跟读</span>
+              </button>
+            </div>
+
+            <div v-if="scoreState(i).error" class="error-detail score-error">{{ scoreState(i).error }}</div>
+
+            <div v-if="scoreState(i).result" class="score-detail">
+              <div class="score-pills">
+                <span class="pill">准确度 {{ Math.round(scoreState(i).result.accuracy_score) }}</span>
+                <span class="pill">流利度 {{ Math.round(scoreState(i).result.fluency_score) }}</span>
+                <span class="pill">完整度 {{ Math.round(scoreState(i).result.completeness_score) }}</span>
+              </div>
+              <div class="word-scores">
+                <span
+                  v-for="(ws, k) in scoreState(i).result.word_scores"
+                  :key="k"
+                  :class="['ws-word', wordScoreClass(ws.accuracy_score)]"
+                  :title="`分数: ${Math.round(ws.accuracy_score)}\n预期音素: ${ws.expected_phonemes || '-'}\n实际音素: ${ws.actual_phonemes || '-'}`"
+                >
+                  {{ ws.word }}
+                </span>
               </div>
             </div>
           </div>
@@ -507,6 +615,87 @@ video {
   color: var(--ink-light);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.repeat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.repeat-btn {
+  min-width: 80px;
+}
+
+.repeat-btn.recording {
+  animation: pulse 1.2s ease-in-out infinite;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+.score-error {
+  margin-top: 10px;
+}
+
+.score-detail {
+  margin-top: 12px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.score-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.word-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  line-height: 1.6;
+}
+
+.ws-word {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: help;
+}
+
+.word-good {
+  background: var(--sage-bg);
+  color: var(--sage);
+}
+
+.word-ok {
+  background: #fff8e1;
+  color: #9a6d00;
+}
+
+.word-bad {
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 .toast {

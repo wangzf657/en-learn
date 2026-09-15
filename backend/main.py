@@ -2,22 +2,26 @@ import json
 import os
 import re
 import sqlite3
+import tempfile
 import threading
 import webbrowser
 from contextlib import closing
+from calendar import monthrange
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from echoic import available_providers, score_recording
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "enlearn.db"
+SCORING_PATH = DATA_DIR / "scoring.json"
 DIST = ROOT / "frontend" / "dist"
 
 SCHEMA = """
@@ -50,6 +54,18 @@ def init_db():
     DATA_DIR.mkdir(exist_ok=True)
     with closing(db()) as conn, conn:
         conn.executescript(SCHEMA)
+
+
+def scoring_config() -> dict:
+    """读评分 provider 配置;文件缺失/损坏时回落 mock。每次请求现读,改配置即时生效。"""
+    try:
+        with open(SCORING_PATH, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {"provider": "mock", "options": {}}
+    if not isinstance(cfg, dict):
+        return {"provider": "mock", "options": {}}
+    return {"provider": cfg.get("provider", "mock"), "options": cfg.get("options") or {}}
 
 
 def valid_date(s: str) -> bool:
@@ -152,22 +168,14 @@ def stream(vid: int):
     return FileResponse(path, media_type="video/mp4")
 
 
-class VideoCreate(BaseModel):
-    date: str
-    title: str
-    videoPath: str
-    subtitleJson: Union[str, dict, None] = None
+class ScoringConfigIn(BaseModel):
+    provider: str
+    options: dict = {}
 
 
-class VideoUpdate(BaseModel):
-    date: Optional[str] = None
-    title: Optional[str] = None
-    videoPath: Optional[str] = None
-    subtitleJson: Union[str, dict, None] = None
-
-
-class PathIn(BaseModel):
+class ImportIn(BaseModel):
     path: str
+    month: str
 
 
 @app.get("/api/admin/videos")
@@ -196,59 +204,6 @@ def admin_list():
     return {"videos": videos}
 
 
-@app.post("/api/admin/videos", status_code=201)
-def admin_create(body: VideoCreate):
-    if not valid_date(body.date):
-        raise HTTPException(422, "date 格式应为 YYYY-MM-DD")
-    with closing(db()) as conn, conn:
-        dup = conn.execute("SELECT 1 FROM videos WHERE date = ?", (body.date,)).fetchone()
-        if dup:
-            raise HTTPException(409, f"日期 {body.date} 已存在视频")
-        subtitle = (
-            normalize_subtitle(body.subtitleJson)
-            if body.subtitleJson is not None
-            else '{"sentences":[]}'
-        )
-        cur = conn.execute(
-            "INSERT INTO videos(date, title, video_path, subtitle_json) VALUES (?, ?, ?, ?)",
-            (body.date, body.title, body.videoPath, subtitle),
-        )
-        vid = cur.lastrowid or 0
-    return {"id": vid}
-
-
-@app.put("/api/admin/videos/{vid}")
-def admin_update(vid: int, body: VideoUpdate):
-    sets, args = [], []
-    if body.date is not None:
-        if not valid_date(body.date):
-            raise HTTPException(422, "date 格式应为 YYYY-MM-DD")
-        with closing(db()) as conn, conn:
-            dup = conn.execute(
-                "SELECT 1 FROM videos WHERE date = ? AND id != ?", (body.date, vid)
-            ).fetchone()
-        if dup:
-            raise HTTPException(409, f"日期 {body.date} 已存在视频")
-        sets.append("date = ?")
-        args.append(body.date)
-    if body.title is not None:
-        sets.append("title = ?")
-        args.append(body.title)
-    if body.videoPath is not None:
-        sets.append("video_path = ?")
-        args.append(body.videoPath)
-    if body.subtitleJson is not None:
-        sets.append("subtitle_json = ?")
-        args.append(normalize_subtitle(body.subtitleJson))
-    if sets:
-        args.append(vid)
-        with closing(db()) as conn, conn:
-            cur = conn.execute(f"UPDATE videos SET {', '.join(sets)} WHERE id = ?", args)
-            if cur.rowcount == 0:
-                raise HTTPException(404, "视频不存在")
-    return {"ok": True}
-
-
 @app.delete("/api/admin/videos/{vid}")
 def admin_delete(vid: int):
     with closing(db()) as conn, conn:
@@ -259,12 +214,116 @@ def admin_delete(vid: int):
     return {"ok": True}
 
 
-@app.post("/api/admin/validate-path")
-def validate_path(body: PathIn):
-    p = Path(body.path)
-    if p.is_file():
-        return {"exists": True, "size": p.stat().st_size}
-    return {"exists": False}
+@app.post("/api/admin/videos/import")
+def admin_import_videos(body: ImportIn):
+    if not re.fullmatch(r"\d{4}-\d{2}", body.month or ""):
+        raise HTTPException(422, "month 格式应为 YYYY-MM")
+    try:
+        datetime.strptime(body.month, "%Y-%m")
+    except ValueError:
+        raise HTTPException(422, "month 格式应为 YYYY-MM")
+    year, mon = int(body.month[:4]), int(body.month[5:7])
+    days_in_month = monthrange(year, mon)[1]
+    folder = Path(body.path)
+    if not folder.is_dir():
+        raise HTTPException(422, "文件夹不存在")
+
+    pattern = re.compile(r"^(\d{1,2})_(.+)\.mp4$", re.IGNORECASE)
+    with closing(db()) as conn, conn:
+        existing = {
+            r["date"]
+            for r in conn.execute(
+                "SELECT date FROM videos WHERE date LIKE ?", (body.month + "-%",)
+            )
+        }
+        seen = set()
+        imported, skipped = [], []
+        for entry in sorted(folder.iterdir(), key=lambda p: p.name):
+            if not entry.is_file():
+                continue
+            m = pattern.match(entry.name)
+            if not m:
+                continue  # 不匹配文件名模式,直接忽略
+            day = int(m.group(1))
+            if day < 1 or day > days_in_month:
+                skipped.append((day, {"file": entry.name, "reason": "序号超出当月天数"}))
+                continue
+            date = f"{body.month}-{day:02d}"
+            subtitle = '{"sentences":[]}'
+            sub_file = folder / (entry.stem + ".json")
+            if sub_file.is_file():
+                try:
+                    subtitle = normalize_subtitle(sub_file.read_text(encoding="utf-8"))
+                except (HTTPException, OSError, UnicodeDecodeError):
+                    skipped.append((day, {"file": entry.name, "reason": "字幕 JSON 无效"}))
+                    continue
+            title, video_path = m.group(2), str(entry.resolve())
+            if date in existing or date in seen:
+                conn.execute(
+                    "UPDATE videos SET title = ?, video_path = ?, subtitle_json = ? WHERE date = ?",
+                    (title, video_path, subtitle, date),
+                )
+                vid = conn.execute(
+                    "SELECT id FROM videos WHERE date = ?", (date,)
+                ).fetchone()["id"]
+                updated = date in existing
+            else:
+                cur = conn.execute(
+                    "INSERT INTO videos(date, title, video_path, subtitle_json) VALUES (?, ?, ?, ?)",
+                    (date, title, video_path, subtitle),
+                )
+                vid = cur.lastrowid or 0
+                updated = False
+            imported.append({"id": vid, "date": date, "title": title, "updated": updated})
+            seen.add(date)
+    imported.sort(key=lambda v: v["date"])
+    skipped.sort(key=lambda t: t[0])
+    return {"imported": imported, "skipped": [d for _, d in skipped]}
+
+
+@app.post("/api/score")
+def score(audio: UploadFile = File(...), reference: str = Form(...)):
+    cfg = scoring_config()
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+    try:
+        with tmp:
+            tmp.write(audio.file.read())
+        try:
+            result = score_recording(
+                tmp.name, reference, provider=cfg["provider"], options=cfg["options"]
+            )
+        except (ValueError, RuntimeError) as e:
+            raise HTTPException(500, str(e))
+        return result.model_dump()
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
+
+
+@app.get("/api/admin/scoring")
+def admin_scoring_get():
+    cfg = scoring_config()
+    return {
+        "provider": cfg["provider"],
+        "options": cfg["options"],
+        "providers": available_providers(),
+    }
+
+
+@app.put("/api/admin/scoring")
+def admin_scoring_put(body: ScoringConfigIn):
+    if body.provider not in available_providers():
+        raise HTTPException(422, f"未知评分 provider: {body.provider}")
+    DATA_DIR.mkdir(exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=DATA_DIR, delete=False
+    ) as f:
+        json.dump(
+            {"provider": body.provider, "options": body.options},
+            f,
+            ensure_ascii=False,
+        )
+    os.replace(f.name, SCORING_PATH)
+    return {"provider": body.provider, "options": body.options}
 
 
 @app.get("/{full_path:path}")

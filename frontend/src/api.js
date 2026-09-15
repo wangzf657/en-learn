@@ -1,8 +1,13 @@
 const BASE = '/api'
 
-async function request(path, options = {}) {
+async function request(path, { headers: userHeaders, ...options } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...userHeaders }
+  if (options.body instanceof FormData) {
+    delete headers['Content-Type']
+  }
+
   const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers,
     ...options,
   })
 
@@ -43,25 +48,31 @@ export const adminApi = {
   list() {
     return request('/admin/videos')
   },
-  create(data) {
-    return request('/admin/videos', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
-  },
-  update(id, data) {
-    return request(`/admin/videos/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    })
-  },
   remove(id) {
     return request(`/admin/videos/${id}`, { method: 'DELETE' })
   },
-  validatePath(path) {
-    return request('/admin/validate-path', {
+  importVideos(path, month) {
+    return request('/admin/videos/import', {
       method: 'POST',
-      body: JSON.stringify({ path }),
+      body: JSON.stringify({ path, month }),
+    })
+  },
+}
+
+export const scoringApi = {
+  score(audioBlob, reference) {
+    const form = new FormData()
+    form.append('audio', audioBlob, 'recording.wav')
+    form.append('reference', reference)
+    return request('/score', { method: 'POST', body: form })
+  },
+  getScoring() {
+    return request('/admin/scoring')
+  },
+  saveScoring(cfg) {
+    return request('/admin/scoring', {
+      method: 'PUT',
+      body: JSON.stringify(cfg),
     })
   },
 }

@@ -40,9 +40,9 @@ await check('admin list', `${base}/api/admin/videos`, (status, body) => {
   return status === 200 && body.videos?.length === 1
 })
 
-await check('validate path', `${base}/api/admin/validate-path`, (status, body) => {
-  return status === 200 && body.exists === true && body.size > 0
-}, 'POST', JSON.stringify({ path: 'D:\\videos\\demo.mp4' }))
+await check('admin import', `${base}/api/admin/videos/import`, (status, body) => {
+  return status === 200 && body.imported?.length === 2 && body.imported.some((i) => i.updated)
+}, 'POST', JSON.stringify({ path: 'D:\\videos\\2026-09', month: '2026-09' }))
 
 // Page shells
 const homeHtml = await fetch(`${base}/`).then((r) => r.text())

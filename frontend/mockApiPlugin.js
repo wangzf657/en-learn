@@ -39,6 +39,8 @@ let videos = [
   { id: 1, date: "2026-09-14", title: "日常问候", videoPath: "D:\\videos\\demo.mp4", sentenceCount: 3, checked: false },
 ]
 
+const scoringConfig = { provider: "mock", options: {}, providers: ["mock", "azure", "iflytek"] }
+
 function today() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
@@ -109,40 +111,6 @@ export default function mockApiPlugin() {
           return sendJson(res, 200, { videos })
         }
 
-        // POST /api/admin/videos
-        if (url === "/admin/videos" && req.method === "POST") {
-          const body = await readBody(req)
-          const existing = videos.find((v) => v.date === body.date)
-          if (existing) return sendJson(res, 409, { detail: `日期 ${body.date} 已经存在` })
-          let subtitle
-          try {
-            subtitle = typeof body.subtitleJson === "string" ? JSON.parse(body.subtitleJson) : body.subtitleJson
-          } catch {
-            return sendJson(res, 422, { detail: "JSON 解析失败" })
-          }
-          const id = videos.length ? Math.max(...videos.map((v) => v.id)) + 1 : 1
-          const sentenceCount = subtitle?.sentences?.length || 0
-          videos.push({ id, date: body.date, title: body.title, videoPath: body.videoPath, sentenceCount, checked: false })
-          return sendJson(res, 201, { id })
-        }
-
-        // PUT /api/admin/videos/:id
-        const putMatch = url.match(/^\/admin\/videos\/(\d+)$/)
-        if (putMatch && req.method === "PUT") {
-          const id = Number(putMatch[1])
-          const body = await readBody(req)
-          const idx = videos.findIndex((v) => v.id === id)
-          if (idx < 0) return sendJson(res, 404, { detail: "视频不存在" })
-          if (body.date) videos[idx].date = body.date
-          if (body.title) videos[idx].title = body.title
-          if (body.videoPath) videos[idx].videoPath = body.videoPath
-          if (body.subtitleJson) {
-            const subtitle = typeof body.subtitleJson === "string" ? JSON.parse(body.subtitleJson) : body.subtitleJson
-            videos[idx].sentenceCount = subtitle?.sentences?.length || 0
-          }
-          return sendJson(res, 200, { ok: true })
-        }
-
         // DELETE /api/admin/videos/:id
         const delMatch = url.match(/^\/admin\/videos\/(\d+)$/)
         if (delMatch && req.method === "DELETE") {
@@ -151,11 +119,64 @@ export default function mockApiPlugin() {
           return sendJson(res, 200, { ok: true })
         }
 
-        // POST /api/admin/validate-path
-        if (url === "/admin/validate-path" && req.method === "POST") {
+        // POST /api/admin/videos/import
+        if (url === "/admin/videos/import" && req.method === "POST") {
           const body = await readBody(req)
-          const exists = body.path && body.path.toLowerCase().endsWith(".mp4")
-          return sendJson(res, 200, { exists, size: exists ? 12_345_678 : 0 })
+          if (body.path && body.path.includes("fail")) {
+            return sendJson(res, 422, { detail: "路径不存在或格式错误" })
+          }
+          const month = body.month || "2026-09"
+          return sendJson(res, 200, {
+            imported: [
+              { id: 10, date: `${month}-01`, title: "第一课", updated: false },
+              { id: 11, date: `${month}-02`, title: "第二课", updated: true },
+            ],
+            skipped: [
+              { file: "03_nosub.json", reason: "缺少对应视频" },
+            ],
+          })
+        }
+
+        // POST /api/score
+        if (url === "/score" && req.method === "POST") {
+          const chunks = []
+          for await (const chunk of req) chunks.push(chunk)
+          const raw = Buffer.concat(chunks)
+          const ct = req.headers["content-type"] || ""
+          const boundaryMatch = ct.match(/boundary=([^;]+)/)
+          let reference = "Hello world"
+          if (boundaryMatch) {
+            const text = raw.toString("binary")
+            const m = text.match(/name="reference"\r\n\r\n([\s\S]*?)\r\n--/)
+            if (m) reference = m[1]
+          }
+          const words = reference.match(/\b[\w']+\b/g) || ["Hello", "world"]
+          const wordScores = words.map((w, i) => ({
+            word: w,
+            accuracy_score: [82.5, 78, 90][i % 3],
+            expected_phonemes: i % 2 === 0 ? "h ə l oʊ" : "w ɜːr l d",
+            actual_phonemes: i % 2 === 0 ? "h ə l oʊ" : "w ə l d",
+            phoneme_scores: [80, 85, 90].slice(0, Math.max(1, w.length % 3 + 1)),
+          }))
+          return sendJson(res, 200, {
+            accuracy_score: 82.5,
+            fluency_score: 78,
+            completeness_score: 90,
+            word_scores: wordScores,
+          })
+        }
+
+        // GET /api/admin/scoring
+        if (url === "/admin/scoring" && req.method === "GET") {
+          return sendJson(res, 200, scoringConfig)
+        }
+
+        // PUT /api/admin/scoring
+        if (url === "/admin/scoring" && req.method === "PUT") {
+          const body = await readBody(req)
+          scoringConfig.provider = body.provider ?? scoringConfig.provider
+          scoringConfig.options = body.options ?? {}
+          return sendJson(res, 200, { ok: true })
         }
 
         return sendJson(res, 404, { detail: "mock 未实现" })

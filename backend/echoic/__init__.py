@@ -1,87 +1,44 @@
-"""Echoic — pronunciation scoring capability.
+"""Echoic — 发音评分库(云 API 对接壳)。
 
-Pure library: ASR (faster-whisper) + forced alignment (wav2vec2) +
-phoneme-level scoring (wav2vec2 CTC). No HTTP, no database.
-
-Typical usage from the host app (backend/ is on sys.path when running
-backend/main.py, so `import echoic` works directly):
-
-    from echoic import transcribe, score_recording
-
-    sentences = transcribe("lesson.mp3")
-    result = score_recording("attempt.webm", reference_text="Hello world")
-    payload = result.model_dump()   # JSON-ready
-
-ML models download on first use (~1 GB total) and cache in the HuggingFace
-cache dir. All calls are synchronous and CPU-bound: call them from `def`
-FastAPI endpoints (threadpool), not `async def`.
+统一入口 `score_recording()` 经 provider 注册表分发到具体 API 实现;
+后台配置决定用哪家。内置 mock 供联调/冒烟;真实 provider 的选型与
+对接规范见 docs/scoring-api-research.md 与 docs/scoring-provider-design.md。
 """
 
-from functools import lru_cache
-from typing import TYPE_CHECKING
-
-from .config import settings
-
-if TYPE_CHECKING:
-    from .schemas import Sentence
-    from .services.scoring.base import ScoringResult
-
-
-@lru_cache(maxsize=None)
-def _asr_service(language: str | None = None):
-    from .services.asr.whisperx import WhisperXASRService
-
-    if language is None or language == settings.asr.language:
-        return WhisperXASRService(settings.asr)
-    return WhisperXASRService(settings.asr.model_copy(update={"language": language}))
-
-
-@lru_cache(maxsize=None)
-def _alignment_service(language: str | None = None):
-    from .services.alignment.wav2vec2 import Wav2Vec2AlignmentService
-
-    if language is None or language == settings.alignment.language:
-        return Wav2Vec2AlignmentService(settings.alignment)
-    return Wav2Vec2AlignmentService(
-        settings.alignment.model_copy(update={"language": language})
-    )
-
-
-@lru_cache
-def _scoring_service():
-    from .services.scoring.phoneme import PhonemeScoringService
-
-    return PhonemeScoringService(settings.scoring)
-
-
-def transcribe(audio_path: str, language: str | None = None) -> "list[Sentence]":
-    """Transcribe an audio file into sentences with word-level timestamps."""
-    return _asr_service(language).transcribe(audio_path)
+from .providers import (
+    MockProvider,
+    ScoringProvider,
+    available_providers,
+    get_provider,
+    register_provider,
+)
+from .schemas import ScoringResult, WordScore
 
 
 def score_recording(
     recording_path: str,
     reference_text: str,
+    provider: str = "mock",
+    options: dict | None = None,
     language: str | None = None,
-) -> "ScoringResult":
-    """Score a user recording against a reference sentence.
+) -> ScoringResult:
+    """用户录音 vs 参考文本 → 三维分数 + 逐词逐音素得分。
 
-    Returns ScoringResult(accuracy_score, fluency_score, completeness_score,
-    word_scores). Words the user skipped or badly mispronounced get 0.
+    provider 名与 options(密钥等)由宿主从后台配置读出后传入。
+    返回 ScoringResult;model_dump() 即 JSON-ready。
     """
-    aligned_words = _alignment_service(language).align(recording_path, reference_text)
-    return _scoring_service().score(
-        recording_path, reference_text, aligned_words, language=language
+    return get_provider(provider, options).score(
+        recording_path, reference_text, language
     )
 
 
-def phonemize_words(words: list[str], language: str | None = None) -> list[str]:
-    """Return display phonemes per word (IPA; romaji for Japanese)."""
-    if language is None:
-        return _scoring_service().phonemize_words(words)
-    from .services.scoring.backends import get_backend
-
-    return get_backend(language).display(words)
-
-
-__all__ = ["transcribe", "score_recording", "phonemize_words", "settings"]
+__all__ = [
+    "score_recording",
+    "ScoringResult",
+    "WordScore",
+    "ScoringProvider",
+    "MockProvider",
+    "available_providers",
+    "get_provider",
+    "register_provider",
+]

@@ -1,12 +1,5 @@
 fastapi
 uvicorn[standard]
-
-# echoic 发音评分包 (backend/echoic) 依赖
-faster-whisper
-torch
-torchaudio
-soundfile
-transformers
-phonemizer
-pydantic-settings
-# 日语音素链路额外需要 fugashi[unidic-lite] + jaconv —— Windows 无 wheel 装不上，缺失时日语评分退化但不报错
+python-multipart
+requests
+# echoic providers: add per-provider SDK when implemented, e.g. tencentcloud-sdk-python-soe

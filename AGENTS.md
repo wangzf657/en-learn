@@ -6,8 +6,8 @@
 
 `en-learn` — 英语学习应用(单机自用,无登录无云端),单仓三部分;需求与设计文档在 `docs/`(design.md 有架构图与路由说明):
 
-- `backend/main.py` — 宿主后端,单文件 FastAPI + SQLite(`data/enlearn.db`),视频/字幕/打卡管理,`start.bat` 一键启动(端口 8420)
-- `backend/echoic/` — **发音评分对接壳**:统一入口 `score_recording()` + provider 注册表(协议 + mock),供宿主接云 API。**尚未接入 main.py**(规划中的 `/api/score`;首版评分不落库,见 docs/requirements.md 非目标)。选型与架构见 `docs/scoring-api-research.md`、`docs/scoring-provider-design.md`
+- `backend/main.py` — 宿主后端,单文件 FastAPI + SQLite(`data/enlearn.db`),视频/字幕/打卡管理、按月批量导入(`POST /api/admin/videos/import`,同日期重导覆盖)、跟读评分 `/api/score` 与评分配置 `GET/PUT /api/admin/scoring`,`start.bat` 一键启动(端口 8420)
+- `backend/echoic/` — **发音评分对接壳**:统一入口 `score_recording()` + provider 注册表,**已上线 mock + unisound(云知声)**,经宿主 `/api/score` 接入,真实密钥配置在 `data/scoring.json`(Admin 页可改,即时生效)。选型与架构见 `docs/scoring-api-research.md`、`docs/scoring-provider-design.md`
 - `frontend/` — Vue 3 SPA(Vite + vue-router + vitest),构建产物 `frontend/dist/` 由宿主后端托管(未构建时返回提示)
 
 工作环境:`backend/.venv`(Python 3.10+,venv 在 backend 下,勿放根目录),依赖见 `backend/requirements.txt`,`start.bat` 首次运行自动安装。**无 lint/CI/格式化工具**。
@@ -34,13 +34,14 @@ from echoic import score_recording, available_providers
 result = score_recording("attempt.wav", reference_text="Hello world", provider="mock")
 result.model_dump()  # JSON-ready: accuracy/fluency/completeness_score + word_scores
 
-available_providers()  # ["mock"] — 供后台配置页做下拉
+available_providers()  # ["mock", "unisound"] — 供后台配置页做下拉
 ```
 
 约定:
 - 每家 API 一个 `ScoringProvider` 子类(`echoic/providers/`),`name` 是注册表键,实现在 `providers/__init__.py` 登记一行
 - 网络/认证错误抛带原因的异常(宿主映射 5xx);参考词没念出来计低分不报错
 - **分数是厂商原始校准分,不做二次变换**(旧本地栈的 0.25 幂校准已废弃);换 provider 分数不可比
+- **unisound(云知声)硬约定**:multipart 字段顺序必须 `text→mode→voice`;词级/音素分是 0–10 制需 ×10 归一;mode 默认 E;鉴权 header `appkey: AppKey@AppSecret` + `session-id`(uuid)
 - `import echoic` 要求 `backend/` 在 sys.path(运行 `backend/main.py` 天然满足;独立脚本需自行处理)
 
 ### 结构
@@ -50,11 +51,12 @@ echoic/__init__.py       # 入口 score_recording + re-export
 echoic/schemas.py        # ScoringResult / WordScore(0–100)
 echoic/providers/base.py # ScoringProvider 协议 + 注册表
 echoic/providers/mock.py # 固定分数假 provider(联调/冒烟)
+echoic/providers/unisound.py # 云知声 sacalleval HTTP API(线上 provider)
 ```
 
 ## 关键坑
 
-- **requirements.txt 只写 ASCII**:pip 在中文 Windows 按 GBK 解码该文件,中文注释会直接 UnicodeDecodeError。
+- **requirements.txt 只写 ASCII**:pip 在中文 Windows 按 GBK 解码该文件,中文注释会直接 UnicodeDecodeError。**start.bat 同理只写 ASCII**:cmd 在 `chcp 65001` 后解析含中文的 bat 有字节偏移 bug,会把 echo 的中文切成碎片当命令执行。
 
 - **前端录音直接录 WAV(16k/16bit/单声道),别用 MediaRecorder 默认的 webm**——所有候选云 API 都不收 webm,录 WAV 后后端零转码、无 ffmpeg 依赖。
 - 手动起后端调试时设 `ENLEARN_NO_BROWSER=1`,否则启动 1.5 秒后自动开浏览器。

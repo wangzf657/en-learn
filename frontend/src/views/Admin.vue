@@ -1,25 +1,85 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { adminApi } from '../api.js'
+import { ref, watch, onMounted } from 'vue'
+import { adminApi, scoringApi } from '../api.js'
 
 const videos = ref([])
 const loading = ref(false)
 const error = ref('')
-const formError = ref('')
 
-const showForm = ref(false)
-const editingId = ref(null)
-const form = ref({
-  date: '',
-  title: '',
-  videoPath: '',
-  subtitleJson: '',
+const scoringLoading = ref(false)
+const scoringError = ref('')
+const scoringSaved = ref(false)
+const scoringProviders = ref([])
+const scoringProvider = ref('mock')
+const scoringOptions = ref({})
+
+const now = new Date()
+const importPath = ref('')
+const importMonth = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
+const importLoading = ref(false)
+const importError = ref('')
+const importResult = ref(null)
+
+onMounted(async () => {
+  await load()
+  await loadScoring()
 })
 
-const pathResult = ref(null)
-const fileInput = ref(null)
+watch(scoringProvider, (next) => {
+  if (next === 'mock') {
+    scoringOptions.value = {}
+  }
+})
 
-onMounted(load)
+async function loadScoring() {
+  scoringLoading.value = true
+  scoringError.value = ''
+  try {
+    const data = await scoringApi.getScoring()
+    scoringProviders.value = data.providers || []
+    scoringProvider.value = data.provider || 'mock'
+    scoringOptions.value = data.options || {}
+  } catch (e) {
+    scoringError.value = e.detail || e.message
+  } finally {
+    scoringLoading.value = false
+  }
+}
+
+async function saveScoring() {
+  scoringError.value = ''
+  scoringSaved.value = false
+  const payload = {
+    provider: scoringProvider.value,
+    options: scoringProvider.value === 'mock' ? {} : { ...scoringOptions.value },
+  }
+  if (payload.provider !== 'mock') {
+    if (!payload.options.appkey || !payload.options.secret) {
+      scoringError.value = 'AppKey 和 Secret 不能为空'
+      return
+    }
+  }
+  try {
+    await scoringApi.saveScoring(payload)
+    scoringSaved.value = true
+    setTimeout(() => (scoringSaved.value = false), 2200)
+  } catch (e) {
+    scoringError.value = e.detail || e.message
+  }
+}
+
+async function submitImport() {
+  importLoading.value = true
+  importError.value = ''
+  importResult.value = null
+  try {
+    importResult.value = await adminApi.importVideos(importPath.value, importMonth.value)
+  } catch (e) {
+    importError.value = e.detail || e.message
+  } finally {
+    importLoading.value = false
+  }
+}
 
 async function load() {
   loading.value = true
@@ -34,59 +94,6 @@ async function load() {
   }
 }
 
-function resetForm() {
-  editingId.value = null
-  form.value = { date: '', title: '', videoPath: '', subtitleJson: '' }
-  pathResult.value = null
-  formError.value = ''
-}
-
-function openCreate() {
-  resetForm()
-  showForm.value = true
-}
-
-function edit(item) {
-  editingId.value = item.id
-  form.value = {
-    date: item.date,
-    title: item.title,
-    videoPath: item.videoPath,
-    subtitleJson: typeof item.subtitleJson === 'string'
-      ? item.subtitleJson
-      : JSON.stringify(item.subtitleJson, null, 2),
-  }
-  pathResult.value = null
-  formError.value = ''
-  showForm.value = true
-}
-
-function closeForm() {
-  showForm.value = false
-  resetForm()
-}
-
-async function submit() {
-  formError.value = ''
-  const payload = {
-    date: form.value.date,
-    title: form.value.title,
-    videoPath: form.value.videoPath,
-    subtitleJson: form.value.subtitleJson,
-  }
-  try {
-    if (editingId.value) {
-      await adminApi.update(editingId.value, payload)
-    } else {
-      await adminApi.create(payload)
-    }
-    await load()
-    closeForm()
-  } catch (e) {
-    formError.value = e.detail || e.message
-  }
-}
-
 async function remove(item) {
   if (!confirm(`确定删除 ${item.date} 的《${item.title}》吗？`)) return
   try {
@@ -96,31 +103,6 @@ async function remove(item) {
     alert(e.detail || e.message)
   }
 }
-
-async function validatePath() {
-  pathResult.value = null
-  if (!form.value.videoPath) return
-  try {
-    pathResult.value = await adminApi.validatePath(form.value.videoPath)
-  } catch (e) {
-    pathResult.value = { exists: false, error: e.detail || e.message }
-  }
-}
-
-function triggerFile() {
-  fileInput.value?.click()
-}
-
-function importFile(e) {
-  const file = e.target.files?.[0]
-  if (!file) return
-  const reader = new FileReader()
-  reader.onload = () => {
-    form.value.subtitleJson = String(reader.result)
-  }
-  reader.readAsText(file)
-  e.target.value = ''
-}
 </script>
 
 <template>
@@ -128,56 +110,17 @@ function importFile(e) {
     <header class="page-header">
       <h1 class="page-title">后台管理</h1>
       <div class="actions">
-        <button class="btn btn-primary" @click="openCreate">新增视频</button>
         <router-link to="/" class="btn btn-secondary">回日历</router-link>
       </div>
     </header>
 
     <div v-if="error" class="error-detail">{{ error }}</div>
 
-    <div v-if="showForm" class="card form-card">
-      <h2>{{ editingId ? '编辑视频' : '新增视频' }}</h2>
-      <div class="form-grid">
-        <label>
-          <span>日期</span>
-          <input type="date" v-model="form.date" />
-        </label>
-        <label>
-          <span>标题</span>
-          <input type="text" v-model="form.title" placeholder="例如：老友记 S01E01" />
-        </label>
-        <label class="full">
-          <span>本地视频路径</span>
-          <div class="path-row">
-            <input type="text" v-model="form.videoPath" placeholder="D:\\videos\\lesson.mp4" />
-            <button type="button" class="btn btn-secondary" @click="validatePath">验证路径</button>
-          </div>
-          <div v-if="pathResult" class="path-result">
-            <span v-if="pathResult.exists">✓ 文件存在，大小 {{ Math.round(pathResult.size / 1024 / 1024 * 100) / 100 }} MB</span>
-            <span v-else class="path-missing">✗ 文件不存在{{ pathResult.error ? '：' + pathResult.error : '' }}</span>
-          </div>
-        </label>
-        <label class="full">
-          <span>字幕 JSON</span>
-          <div class="textarea-actions">
-            <button type="button" class="btn btn-secondary btn-sm" @click="triggerFile">导入 JSON 文件</button>
-            <input ref="fileInput" type="file" accept=".json,application/json" @change="importFile" style="display: none" />
-          </div>
-          <textarea v-model="form.subtitleJson" placeholder='{"sentences": [{"start": 1.2, "end": 4.5, "en": "...", "zh": "..."}]}'></textarea>
-        </label>
-      </div>
-      <div v-if="formError" class="error-detail">{{ formError }}</div>
-      <div class="form-actions">
-        <button class="btn btn-primary" @click="submit">保存</button>
-        <button class="btn btn-ghost" @click="closeForm">取消</button>
-      </div>
-    </div>
-
     <div v-if="loading" class="empty-state">加载中…</div>
 
     <div v-else-if="videos.length === 0" class="card empty-state">
       <h3>暂无视频</h3>
-      <p>点击“新增视频”添加第一条学习内容。</p>
+      <p>在下方按月快捷导入第一条学习内容。</p>
     </div>
 
     <div v-else class="card table-wrap">
@@ -202,13 +145,95 @@ function importFile(e) {
             </td>
             <td>
               <div class="row-actions">
-                <button class="btn btn-secondary btn-sm" @click="edit(v)">编辑</button>
                 <button class="btn btn-ghost btn-sm" @click="remove(v)">删除</button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div class="card import-card">
+      <h2>按月快捷导入</h2>
+      <div class="form-grid">
+        <label class="full">
+          <span>文件夹路径</span>
+          <input type="text" v-model="importPath" placeholder="D:\\videos\\2026-09" />
+        </label>
+        <label>
+          <span>月份</span>
+          <input type="month" v-model="importMonth" />
+        </label>
+        <div class="full form-actions">
+          <button class="btn btn-primary" :disabled="importLoading" @click="submitImport">
+            <span v-if="importLoading">导入中…</span>
+            <span v-else>导入</span>
+          </button>
+        </div>
+        <div v-if="importError" class="full error-detail">{{ importError }}</div>
+      </div>
+
+      <div v-if="importResult" class="import-result">
+        <div v-if="importResult.imported.length" class="result-section">
+          <h3>导入成功 {{ importResult.imported.length }} 条</h3>
+          <ul>
+            <li v-for="item in importResult.imported" :key="item.id">
+              <span class="date">{{ item.date }}</span>
+              <span class="title">{{ item.title }}</span>
+              <span v-if="item.updated" class="tag updated">覆盖</span>
+              <span v-else class="tag created">新增</span>
+            </li>
+          </ul>
+        </div>
+        <div v-if="importResult.skipped.length" class="result-section">
+          <h3>跳过 {{ importResult.skipped.length }} 条</h3>
+          <ul>
+            <li v-for="(item, idx) in importResult.skipped" :key="idx">
+              <span class="file">{{ item.file }}</span>
+              <span class="reason">{{ item.reason }}</span>
+            </li>
+          </ul>
+        </div>
+        <div v-if="!importResult.imported.length && !importResult.skipped.length" class="result-empty">
+          没有匹配的文件
+        </div>
+      </div>
+    </div>
+
+    <div class="card scoring-card">
+      <h2>发音评分服务</h2>
+      <div v-if="scoringLoading" class="empty-state" style="padding: 20px">加载中…</div>
+      <div v-else class="form-grid">
+        <label>
+          <span>评分服务</span>
+          <select v-model="scoringProvider">
+            <option v-for="p in scoringProviders" :key="p" :value="p">{{ p }}</option>
+          </select>
+        </label>
+        <template v-if="scoringProvider !== 'mock'">
+          <label>
+            <span>AppKey</span>
+            <input type="text" v-model="scoringOptions.appkey" placeholder="必填" />
+          </label>
+          <label>
+            <span>Secret</span>
+            <input type="password" v-model="scoringOptions.secret" placeholder="必填" />
+          </label>
+          <label>
+            <span>模式</span>
+            <input type="text" v-model="scoringOptions.mode" placeholder="默认 E" />
+          </label>
+          <label>
+            <span>服务地址</span>
+            <input type="text" v-model="scoringOptions.base_url" placeholder="默认官方地址" />
+          </label>
+        </template>
+        <div class="full form-actions">
+          <button class="btn btn-primary" @click="saveScoring">保存</button>
+          <span v-if="scoringSaved" class="save-hint">已保存</span>
+        </div>
+        <div v-if="scoringError" class="full error-detail">{{ scoringError }}</div>
+      </div>
     </div>
   </div>
 </template>
@@ -328,6 +353,109 @@ tbody tr:hover {
 .row-actions {
   display: flex;
   gap: 8px;
+}
+
+.import-card {
+  margin-top: 28px;
+  padding: 24px;
+}
+
+.import-card h2 {
+  font-size: 22px;
+  margin-bottom: 18px;
+}
+
+.import-result {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.result-section h3 {
+  font-size: 15px;
+  color: var(--ink-light);
+  margin: 0 0 10px;
+}
+
+.result-section + .result-section {
+  margin-top: 16px;
+}
+
+.import-result ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-result li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--paper);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.import-result .date {
+  font-family: var(--font-mono);
+  color: var(--sage);
+  min-width: 90px;
+}
+
+.import-result .title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.import-result .file {
+  font-family: var(--font-mono);
+  color: var(--ink-light);
+  min-width: 140px;
+}
+
+.import-result .reason {
+  color: var(--accent);
+}
+
+.import-result .tag {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.import-result .tag.created {
+  background: var(--sage-bg);
+  color: var(--sage);
+}
+
+.import-result .tag.updated {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.result-empty {
+  color: var(--ink-light);
+  font-size: 14px;
+}
+
+.scoring-card {
+  margin-top: 28px;
+  padding: 24px;
+}
+
+.scoring-card h2 {
+  font-size: 22px;
+  margin-bottom: 18px;
+}
+
+.save-hint {
+  color: var(--sage);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 @media (max-width: 768px) {

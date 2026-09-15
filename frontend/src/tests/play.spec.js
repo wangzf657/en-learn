@@ -1,6 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import Play from '../views/Play.vue'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mountWithRouter, mockFetch, restoreFetch, dispatchTimeUpdate } from './helpers.js'
+
+vi.mock('../utils/recorder.js', () => ({
+  startRecording: vi.fn(),
+}))
+
+import Play from '../views/Play.vue'
+import { startRecording } from '../utils/recorder.js'
 
 const sampleDay = {
   videoId: 1,
@@ -16,11 +22,35 @@ const sampleDay = {
   },
 }
 
+function makeScoreResponse(reference) {
+  const words = reference ? reference.match(/\b[\w']+\b/g) || ['hello'] : ['hello']
+  return {
+    accuracy_score: 82.5,
+    fluency_score: 78,
+    completeness_score: 90,
+    word_scores: words.map((w) => ({
+      word: w,
+      accuracy_score: 85,
+      expected_phonemes: 'h ə l oʊ',
+      actual_phonemes: 'h ə l oʊ',
+      phoneme_scores: [80],
+    })),
+  }
+}
+
 describe('Play.vue core interactions', () => {
   beforeEach(() => {
-    mockFetch((url) => {
+    startRecording.mockResolvedValue({
+      stop: vi.fn().mockResolvedValue(new Blob(['fake wav'], { type: 'audio/wav' })),
+    })
+
+    mockFetch((url, options) => {
       if (url === '/api/day/2026-09-14') return { body: sampleDay }
       if (url.endsWith('/checkin')) return { body: { ok: true } }
+      if (url === '/api/score' && options.method === 'POST') {
+        const reference = options.body?.get?.('reference') || 'hello'
+        return { body: makeScoreResponse(reference) }
+      }
       return { status: 404, body: { detail: 'not found' } }
     })
   })
@@ -54,5 +84,40 @@ describe('Play.vue core interactions', () => {
 
     expect(video.currentTime).toBe(5.0)
     expect(played).toBe(true)
+  })
+
+  it('records repeat and renders score result with colored words', async () => {
+    const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
+
+    const firstCard = wrapper.findAll('.sentence-card')[0]
+    const repeatBtn = firstCard.find('.repeat-btn')
+    expect(repeatBtn.text()).toBe('跟读')
+
+    await repeatBtn.trigger('click')
+    expect(startRecording).toHaveBeenCalledTimes(1)
+    expect(firstCard.find('.repeat-btn').text()).toBe('停止')
+
+    await firstCard.find('.repeat-btn').trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(firstCard.text()).toContain('准确度 83')
+    expect(firstCard.text()).toContain('流利度 78')
+    expect(firstCard.text()).toContain('完整度 90')
+    expect(firstCard.findAll('.ws-word').length).toBeGreaterThan(0)
+    expect(firstCard.findAll('.word-good').length).toBeGreaterThan(0)
+    expect(firstCard.find('.repeat-btn').text()).toBe('重新跟读')
+  })
+
+  it('shows repeat error inline without blocking the page', async () => {
+    startRecording.mockRejectedValueOnce(new Error('麦克风权限被拒绝'))
+
+    const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
+
+    const firstCard = wrapper.findAll('.sentence-card')[0]
+    await firstCard.find('.repeat-btn').trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(firstCard.text()).toContain('麦克风权限被拒绝')
+    expect(wrapper.find('video').exists()).toBe(true)
   })
 })
