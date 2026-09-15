@@ -256,12 +256,19 @@ onBeforeUnmount(() => {
   <div class="page play-page">
     <header class="page-header">
       <button class="btn btn-ghost btn-sm" @click="$router.push('/')">‹ 返回日历</button>
-      <h1 class="page-title">{{ day?.title || date }}</h1>
-      <span v-if="checkedIn" class="checked-badge">已打卡</span>
-      <span v-else class="unchecked-badge">未打卡</span>
+      <div class="title-group">
+        <h1 class="page-title">{{ day?.title || date }}</h1>
+        <span v-if="checkedIn" class="badge badge-blue">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          已打卡
+        </span>
+        <span v-else class="badge badge-yellow">未打卡</span>
+      </div>
     </header>
 
-    <div v-if="loading" class="empty-state">加载中…</div>
+    <div v-if="loading" class="card empty-state">
+      <p>正在加载学习内容…</p>
+    </div>
 
     <div v-else-if="error" class="card empty-state">
       <h3>{{ error }}</h3>
@@ -285,8 +292,12 @@ onBeforeUnmount(() => {
 
         <div class="controls">
           <button class="play-btn" @click="togglePlay" :aria-label="playing ? '暂停' : '播放'">
-            <span v-if="playing">❚❚</span>
-            <span v-else>▶</span>
+            <svg v-if="playing" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
+            </svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
           </button>
 
           <div class="progress-area">
@@ -306,16 +317,25 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="volume-area">
-            <label for="volume">音量</label>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <path v-if="volume > 0" d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+              <path v-if="volume > 0.5" d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+            </svg>
             <input id="volume" type="range" min="0" max="1" step="0.05" v-model.number="volume" @input="setVolume" />
           </div>
         </div>
       </section>
 
       <section class="panel-section card">
-        <h2 class="panel-title">今日台词</h2>
+        <h2 class="panel-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
+          </svg>
+          今日台词
+        </h2>
         <div v-if="sentences.length === 0" class="empty-state" style="padding: 40px 20px">
-          暂无字幕数据
+          <p>暂无字幕数据</p>
         </div>
         <div v-else class="sentence-list">
           <div
@@ -326,8 +346,11 @@ onBeforeUnmount(() => {
             :class="{ active: i === currentIndex }"
             @click="seekToSentence(s)"
           >
-            <p class="en">{{ s.en }}</p>
-            <p v-if="s.zh" class="zh">{{ s.zh }}</p>
+            <div class="sentence-main">
+              <p class="en">{{ s.en }}</p>
+              <p v-if="s.zh" class="zh">{{ s.zh }}</p>
+            </div>
+
             <div v-if="s.words?.length" class="words">
               <div v-for="(w, j) in s.words" :key="j" class="word-chip">
                 <span class="w">{{ w.w }}</span>
@@ -343,20 +366,30 @@ onBeforeUnmount(() => {
                 :disabled="scoreState(i).status === 'scoring'"
                 @click.stop="toggleRepeat(i, s)"
               >
-                <span v-if="scoreState(i).status === 'recording'">停止</span>
+                <svg v-if="scoreState(i).status === 'recording'" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+                <svg v-else-if="scoreState(i).status === 'scoring'" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8Z" opacity=".4"/><path d="M12 6v6l4 2"/></svg>
+                <svg v-else-if="scoreState(i).result" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+                <span v-if="scoreState(i).status === 'recording'">停止录音</span>
                 <span v-else-if="scoreState(i).status === 'scoring'">评分中…</span>
                 <span v-else-if="scoreState(i).result">重新跟读</span>
-                <span v-else>跟读</span>
+                <span v-else>跟读一下</span>
               </button>
             </div>
 
             <div v-if="scoreState(i).error" class="error-detail score-error">{{ scoreState(i).error }}</div>
 
             <div v-if="scoreState(i).result" class="score-detail">
+              <div class="score-header">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+                <span>本次得分</span>
+              </div>
               <div class="score-pills">
-                <span class="pill">准确度 {{ Math.round(scoreState(i).result.accuracy_score) }}</span>
-                <span class="pill">流利度 {{ Math.round(scoreState(i).result.fluency_score) }}</span>
-                <span class="pill">完整度 {{ Math.round(scoreState(i).result.completeness_score) }}</span>
+                <span class="pill pill-blue">准确度 {{ Math.round(scoreState(i).result.accuracy_score) }}</span>
+                <span class="pill pill-green">流利度 {{ Math.round(scoreState(i).result.fluency_score) }}</span>
+                <span class="pill pill-orange">完整度 {{ Math.round(scoreState(i).result.completeness_score) }}</span>
               </div>
               <div class="word-scores">
                 <span
@@ -375,48 +408,38 @@ onBeforeUnmount(() => {
     </div>
 
     <transition name="fade">
-      <div v-if="toast" class="toast">{{ toast }}</div>
+      <div v-if="toast" class="toast">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+        {{ toast }}
+      </div>
     </transition>
   </div>
 </template>
 
 <style scoped>
 .play-page {
-  padding-top: 28px;
+  padding-top: 20px;
 }
 
-.play-page .page-header {
-  align-items: baseline;
-}
-
-.checked-badge,
-.unchecked-badge {
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.checked-badge {
-  background: var(--sage-bg);
-  color: var(--sage);
-}
-
-.unchecked-badge {
-  background: var(--paper-2);
-  color: var(--ink-light);
+.title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .play-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  gap: 22px;
+  gap: 24px;
   align-items: start;
 }
 
 .video-section {
   position: sticky;
-  top: 24px;
+  top: 84px;
   padding: 0;
   overflow: hidden;
 }
@@ -438,26 +461,33 @@ video {
 .controls {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
-  background: var(--paper-2);
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--bg);
 }
 
 .play-btn {
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--blue);
   color: #fff;
   font-size: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-shadow: var(--shadow-blue);
+  transition: transform var(--transition), background var(--transition);
 }
 
 .play-btn:hover {
-  background: var(--accent-hover);
+  background: var(--blue-hover);
+  transform: scale(1.05);
+}
+
+.play-btn:active {
+  transform: scale(0.98);
 }
 
 .progress-area {
@@ -467,107 +497,126 @@ video {
 
 .progress-track {
   position: relative;
-  height: 8px;
-  background: var(--paper-3);
-  border-radius: 4px;
+  height: 10px;
+  background: var(--border);
+  border-radius: 999px;
   cursor: pointer;
 }
 
 .progress-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  background: var(--accent);
-  border-radius: 4px;
+  background: var(--blue);
+  border-radius: 999px;
   pointer-events: none;
 }
 
 .progress-thumb {
   position: absolute;
   top: 50%;
-  width: 16px;
-  height: 16px;
-  margin-top: -8px;
-  margin-left: -8px;
+  width: 18px;
+  height: 18px;
+  margin-top: -9px;
+  margin-left: -9px;
   background: #fff;
-  border: 2px solid var(--accent);
+  border: 3px solid var(--blue);
   border-radius: 50%;
   pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.35);
 }
 
 .time-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .time {
   font-family: var(--font-mono);
   font-size: 13px;
-  color: var(--ink-light);
+  color: var(--muted);
 }
 
 .rate-btn {
-  padding: 4px 10px;
-  border-radius: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
   background: #fff;
   border: 1px solid var(--border);
   font-family: var(--font-mono);
   font-size: 13px;
-  color: var(--accent);
+  font-weight: 600;
+  color: var(--blue);
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.rate-btn:hover {
+  border-color: var(--blue);
+  background: var(--blue-bg);
 }
 
 .volume-area {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 13px;
-  color: var(--ink-light);
+  color: var(--muted);
 }
 
 .volume-area input[type='range'] {
-  width: 90px;
+  width: 100px;
   padding: 0;
+  min-height: auto;
+  accent-color: var(--blue);
 }
 
 .panel-section {
-  padding: 20px 22px;
+  padding: 22px 24px;
   max-height: calc(100svh - 160px);
   overflow-y: auto;
 }
 
 .panel-title {
-  font-size: 22px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
+  color: var(--ink);
 }
 
 .sentence-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .sentence-card {
-  padding: 16px 18px;
-  border-radius: 12px;
+  padding: 18px 20px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--border);
-  background: var(--paper);
+  background: var(--card);
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s, transform 0.15s;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
 }
 
 .sentence-card:hover {
-  border-color: var(--accent);
-  transform: translateX(4px);
+  border-color: var(--blue);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
 }
 
 .sentence-card.active {
-  background: var(--highlight);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  background: var(--blue-bg);
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+}
+
+.sentence-main {
+  margin-bottom: 10px;
 }
 
 .en {
@@ -575,27 +624,29 @@ video {
   font-weight: 600;
   line-height: 1.5;
   margin: 0 0 6px;
+  color: var(--ink);
 }
 
 .zh {
   font-size: 14px;
-  color: var(--ink-light);
-  margin: 0 0 10px;
+  color: var(--muted);
+  margin: 0;
 }
 
 .words {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 14px;
 }
 
 .word-chip {
   display: inline-flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: var(--paper-2);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
   border: 1px solid var(--border);
   font-size: 13px;
 }
@@ -607,12 +658,12 @@ video {
 
 .word-chip .phonetic {
   font-family: var(--font-mono);
-  color: var(--sage);
+  color: var(--blue);
   font-size: 12px;
 }
 
 .word-chip .note {
-  color: var(--ink-light);
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -621,51 +672,72 @@ video {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 12px;
 }
 
 .repeat-btn {
-  min-width: 80px;
+  min-width: 100px;
 }
 
 .repeat-btn.recording {
   animation: pulse 1.2s ease-in-out infinite;
-  background: var(--accent-bg);
-  color: var(--accent);
-  border: 1px solid var(--accent);
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.65; }
+  background: var(--red-bg);
+  color: var(--red);
+  border: 1px solid var(--red);
+  box-shadow: none;
 }
 
 .score-error {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .score-detail {
-  margin-top: 12px;
-  padding: 14px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  margin-top: 14px;
+  padding: 16px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+}
+
+.score-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-weight: 700;
+  color: var(--yellow);
+}
+
+.score-header svg {
+  color: var(--yellow);
+  filter: drop-shadow(0 1px 2px rgba(255, 204, 0, 0.35));
 }
 
 .score-pills {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .pill {
-  padding: 4px 10px;
-  border-radius: 999px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
   font-size: 13px;
   font-weight: 600;
-  background: var(--paper-2);
-  color: var(--ink);
+}
+
+.pill-blue {
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+
+.pill-green {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.pill-orange {
+  background: var(--orange-bg);
+  color: #c46a00;
 }
 
 .word-scores {
@@ -676,26 +748,26 @@ video {
 }
 
 .ws-word {
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-xs);
   font-size: 14px;
   font-weight: 600;
   cursor: help;
 }
 
 .word-good {
-  background: var(--sage-bg);
-  color: var(--sage);
+  background: var(--green-bg);
+  color: var(--green);
 }
 
 .word-ok {
-  background: #fff8e1;
-  color: #9a6d00;
+  background: var(--yellow-bg);
+  color: #a67c00;
 }
 
 .word-bad {
-  background: var(--accent-bg);
-  color: var(--accent);
+  background: var(--red-bg);
+  color: var(--red);
 }
 
 .toast {
@@ -703,12 +775,20 @@ video {
   left: 50%;
   bottom: 36px;
   transform: translateX(-50%);
-  padding: 10px 22px;
-  border-radius: 999px;
+  padding: 12px 24px;
+  border-radius: var(--radius-pill);
   background: var(--ink);
   color: #fff;
   font-size: 14px;
+  font-weight: 600;
   box-shadow: var(--shadow);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toast svg {
+  color: var(--yellow);
 }
 
 .fade-enter-active,
@@ -737,11 +817,14 @@ video {
 @media (max-width: 640px) {
   .controls {
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 12px;
   }
   .volume-area {
     width: 100%;
     justify-content: flex-end;
+  }
+  .title-group {
+    width: 100%;
   }
 }
 </style>

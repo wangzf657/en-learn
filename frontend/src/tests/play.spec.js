@@ -91,11 +91,11 @@ describe('Play.vue core interactions', () => {
 
     const firstCard = wrapper.findAll('.sentence-card')[0]
     const repeatBtn = firstCard.find('.repeat-btn')
-    expect(repeatBtn.text()).toBe('跟读')
+    expect(repeatBtn.text()).toBe('跟读一下')
 
     await repeatBtn.trigger('click')
     expect(startRecording).toHaveBeenCalledTimes(1)
-    expect(firstCard.find('.repeat-btn').text()).toBe('停止')
+    expect(firstCard.find('.repeat-btn').text()).toBe('停止录音')
 
     await firstCard.find('.repeat-btn').trigger('click')
     await new Promise((r) => setTimeout(r, 10))

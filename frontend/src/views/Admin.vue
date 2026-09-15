@@ -108,7 +108,10 @@ async function remove(item) {
 <template>
   <div class="page admin-page">
     <header class="page-header">
-      <h1 class="page-title">后台管理</h1>
+      <div>
+        <h1 class="page-title">后台管理</h1>
+        <p class="page-subtitle">管理视频、导入课程与配置评分服务</p>
+      </div>
       <div class="actions">
         <router-link to="/" class="btn btn-secondary">回日历</router-link>
       </div>
@@ -116,7 +119,9 @@ async function remove(item) {
 
     <div v-if="error" class="error-detail">{{ error }}</div>
 
-    <div v-if="loading" class="empty-state">加载中…</div>
+    <div v-if="loading" class="card empty-state">
+      <p>正在加载视频列表…</p>
+    </div>
 
     <div v-else-if="videos.length === 0" class="card empty-state">
       <h3>暂无视频</h3>
@@ -154,11 +159,16 @@ async function remove(item) {
     </div>
 
     <div class="card import-card">
-      <h2>按月快捷导入</h2>
+      <h2>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+        </svg>
+        按月快捷导入
+      </h2>
       <div class="form-grid">
         <label class="full">
           <span>文件夹路径</span>
-          <input type="text" v-model="importPath" placeholder="D:\\videos\\2026-09" />
+          <input type="text" v-model="importPath" placeholder="D:\videos\2026-09" />
         </label>
         <label>
           <span>月份</span>
@@ -201,8 +211,15 @@ async function remove(item) {
     </div>
 
     <div class="card scoring-card">
-      <h2>发音评分服务</h2>
-      <div v-if="scoringLoading" class="empty-state" style="padding: 20px">加载中…</div>
+      <h2>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+        发音评分服务
+      </h2>
+      <div v-if="scoringLoading" class="empty-state" style="padding: 20px">
+        <p>正在加载配置…</p>
+      </div>
       <div v-else class="form-grid">
         <label>
           <span>评分服务</span>
@@ -240,6 +257,7 @@ async function remove(item) {
 
 <style scoped>
 .admin-page .page-header {
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: 12px;
 }
@@ -249,14 +267,25 @@ async function remove(item) {
   gap: 10px;
 }
 
-.form-card {
+.import-card,
+.scoring-card {
+  margin-top: 28px;
   padding: 24px;
-  margin-bottom: 28px;
 }
 
-.form-card h2 {
-  font-size: 22px;
-  margin-bottom: 18px;
+.import-card h2,
+.scoring-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  margin-bottom: 20px;
+  color: var(--ink);
+}
+
+.import-card h2 svg,
+.scoring-card h2 svg {
+  color: var(--blue);
 }
 
 .form-grid {
@@ -268,117 +297,46 @@ async function remove(item) {
 .form-grid label {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .form-grid label span {
   font-size: 14px;
-  color: var(--ink-light);
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .form-grid .full {
   grid-column: 1 / -1;
 }
 
-.path-row {
-  display: flex;
-  gap: 10px;
-}
-
-.path-row input {
-  flex: 1;
-}
-
-.path-result {
-  margin-top: 6px;
-  font-size: 13px;
-  color: var(--sage);
-}
-
-.path-missing {
-  color: var(--accent);
-}
-
-.textarea-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .form-actions {
   display: flex;
+  align-items: center;
   gap: 12px;
-  margin-top: 18px;
+  margin-top: 8px;
 }
 
-.table-wrap {
-  overflow-x: auto;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-  font-size: 15px;
-}
-
-th, td {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-th {
-  background: var(--paper-2);
-  font-weight: 700;
-  color: var(--ink-light);
-}
-
-tbody tr:hover {
-  background: #fffaf5;
-}
-
-.tag {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  background: var(--paper-2);
-  color: var(--ink-light);
-}
-
-.tag.checked {
-  background: var(--sage-bg);
-  color: var(--sage);
-}
-
-.row-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.import-card {
-  margin-top: 28px;
-  padding: 24px;
-}
-
-.import-card h2 {
-  font-size: 22px;
-  margin-bottom: 18px;
+.save-hint {
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .import-result {
-  margin-top: 20px;
-  padding-top: 20px;
+  margin-top: 24px;
+  padding-top: 24px;
   border-top: 1px solid var(--border);
 }
 
 .result-section h3 {
   font-size: 15px;
-  color: var(--ink-light);
-  margin: 0 0 10px;
+  color: var(--muted);
+  margin: 0 0 12px;
 }
 
 .result-section + .result-section {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .import-result ul {
@@ -387,23 +345,24 @@ tbody tr:hover {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .import-result li {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
-  background: var(--paper);
-  border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
   font-size: 14px;
 }
 
 .import-result .date {
   font-family: var(--font-mono);
-  color: var(--sage);
+  color: var(--blue);
   min-width: 90px;
+  font-weight: 600;
 }
 
 .import-result .title {
@@ -413,12 +372,12 @@ tbody tr:hover {
 
 .import-result .file {
   font-family: var(--font-mono);
-  color: var(--ink-light);
+  color: var(--muted);
   min-width: 140px;
 }
 
 .import-result .reason {
-  color: var(--accent);
+  color: var(--red);
 }
 
 .import-result .tag {
@@ -428,42 +387,23 @@ tbody tr:hover {
 }
 
 .import-result .tag.created {
-  background: var(--sage-bg);
-  color: var(--sage);
+  background: var(--green-bg);
+  color: var(--green);
 }
 
 .import-result .tag.updated {
-  background: #fff3e0;
-  color: #e65100;
+  background: var(--orange-bg);
+  color: #c46a00;
 }
 
 .result-empty {
-  color: var(--ink-light);
+  color: var(--muted);
   font-size: 14px;
-}
-
-.scoring-card {
-  margin-top: 28px;
-  padding: 24px;
-}
-
-.scoring-card h2 {
-  font-size: 22px;
-  margin-bottom: 18px;
-}
-
-.save-hint {
-  color: var(--sage);
-  font-size: 14px;
-  font-weight: 600;
 }
 
 @media (max-width: 768px) {
   .form-grid {
     grid-template-columns: 1fr;
-  }
-  .path-row {
-    flex-direction: column;
   }
 }
 </style>

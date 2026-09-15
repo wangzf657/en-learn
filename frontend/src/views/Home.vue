@@ -3,6 +3,7 @@ import { ref, computed, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import { calendarApi } from '../api.js'
 import { todayKey, getMonthGrid, addMonth, formatMonth } from '../utils/date.js'
+import mascotUrl from '../assets/mascot.jpg'
 
 const router = useRouter()
 
@@ -69,7 +70,13 @@ function isToday(date) {
 <template>
   <div class="page calendar-page">
     <header class="page-header">
-      <h1 class="page-title">每日英语</h1>
+      <div class="hero-title">
+        <img :src="mascotUrl" alt="" class="mascot-sm" />
+        <div>
+          <h1 class="page-title">每日英语</h1>
+          <p class="page-subtitle">每天进步一点点，跟读打卡学英语</p>
+        </div>
+      </div>
       <router-link to="/admin" class="icon-btn settings" title="后台管理">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"></circle>
@@ -78,44 +85,52 @@ function isToday(date) {
       </router-link>
     </header>
 
-    <div class="calendar-toolbar">
-      <button class="btn btn-secondary btn-sm" @click="prevMonth">‹ 上月</button>
-      <span class="calendar-month">{{ monthLabel }}</span>
-      <button class="btn btn-secondary btn-sm" @click="nextMonth">下月 ›</button>
-    </div>
-
     <div v-if="error" class="error-detail">{{ error }}</div>
 
-    <div v-if="loading" class="empty-state">加载中…</div>
+    <div v-if="loading" class="card empty-state">
+      <p>正在加载学习日历…</p>
+    </div>
 
     <template v-else>
       <div v-if="days.length === 0" class="card empty-state">
+        <img :src="mascotUrl" alt="" class="mascot" />
         <h3>本月还没有学习任务</h3>
         <p>去后台添加视频，让学习日历充实起来吧。</p>
         <router-link to="/admin" class="btn btn-primary" style="margin-top: 20px">进入后台</router-link>
       </div>
 
-      <div v-else class="card calendar">
-        <div class="calendar-head">
-          <div v-for="h in weekHeaders" :key="h" class="cell header-cell">{{ h }}</div>
+      <div v-else class="calendar-frame">
+        <div class="calendar-toolbar">
+          <button class="btn btn-secondary btn-sm" @click="prevMonth">‹ 上月</button>
+          <span class="calendar-month">{{ monthLabel }}</span>
+          <button class="btn btn-secondary btn-sm" @click="nextMonth">下月 ›</button>
         </div>
-        <div class="calendar-body">
-          <div
-            v-for="(date, idx) in cells"
-            :key="idx"
-            class="cell day-cell"
-            :class="{
-              'is-today': date && isToday(date),
-              'has-video': date && dayMap[date]?.videoId != null,
-              checked: date && dayMap[date]?.checked,
-            }"
-            @click="date && goPlay(date)"
-          >
-            <template v-if="date">
-              <span class="day-number">{{ Number(date.split('-')[2]) }}</span>
-              <span v-if="dayMap[date]?.title" class="day-title">{{ dayMap[date].title }}</span>
-              <span v-if="dayMap[date]?.checked" class="check-mark" aria-label="已打卡">✓</span>
-            </template>
+
+        <div class="card calendar">
+          <div class="calendar-head">
+            <div v-for="h in weekHeaders" :key="h" class="cell header-cell">{{ h }}</div>
+          </div>
+          <div class="calendar-body">
+            <div
+              v-for="(date, idx) in cells"
+              :key="idx"
+              class="cell day-cell"
+              :class="{
+                'is-today': date && isToday(date),
+                'has-video': date && dayMap[date]?.videoId != null,
+                checked: date && dayMap[date]?.checked,
+              }"
+              @click="date && goPlay(date)"
+            >
+              <template v-if="date">
+                <div class="day-top">
+                  <span class="day-number">{{ Number(date.split('-')[2]) }}</span>
+                  <span v-if="dayMap[date]?.checked" class="check-mark" aria-label="已打卡">★</span>
+                </div>
+                <span v-if="dayMap[date]?.title" class="day-title">{{ dayMap[date].title }}</span>
+                <span v-else-if="dayMap[date]?.videoId != null" class="day-hint">开始跟读</span>
+              </template>
+            </div>
           </div>
         </div>
       </div>
@@ -124,19 +139,32 @@ function isToday(date) {
 </template>
 
 <style scoped>
+.hero-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.calendar-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .calendar-toolbar {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 18px;
-  margin-bottom: 24px;
 }
 
 .calendar-month {
   font-family: var(--font-display);
   font-size: 22px;
-  min-width: 140px;
+  font-weight: 700;
+  min-width: 150px;
   text-align: center;
+  color: var(--ink);
 }
 
 .calendar {
@@ -150,16 +178,16 @@ function isToday(date) {
 }
 
 .calendar-head {
-  background: var(--paper-2);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 
 .cell {
-  min-height: 96px;
-  padding: 10px;
+  min-height: 110px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
@@ -174,16 +202,16 @@ function isToday(date) {
 
 .header-cell {
   min-height: auto;
-  padding: 12px 10px;
+  padding: 14px 10px;
   align-items: center;
   font-weight: 700;
-  color: var(--ink-light);
+  color: var(--muted);
   border-bottom: none;
 }
 
 .day-cell {
   cursor: default;
-  transition: background 0.15s;
+  transition: background var(--transition), transform var(--transition);
 }
 
 .day-cell.has-video {
@@ -191,29 +219,38 @@ function isToday(date) {
 }
 
 .day-cell.has-video:hover {
-  background: #fffaf5;
+  background: var(--blue-bg);
+  transform: translateY(-2px);
+}
+
+.day-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .day-number {
   font-family: var(--font-mono);
-  font-size: 14px;
-  color: var(--ink-light);
-}
-
-.is-today .day-number {
+  font-size: 15px;
+  color: var(--muted);
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
   border-radius: 50%;
-  background: var(--accent);
+}
+
+.is-today .day-number {
+  background: var(--blue);
   color: #fff;
+  box-shadow: var(--shadow-blue);
 }
 
 .day-title {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
+  font-weight: 600;
   color: var(--ink);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -221,41 +258,57 @@ function isToday(date) {
   overflow: hidden;
 }
 
+.day-hint {
+  font-size: 13px;
+  color: var(--blue);
+  font-weight: 600;
+}
+
 .check-mark {
-  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: var(--sage-bg);
-  color: var(--sage);
+  background: var(--yellow);
+  color: #fff;
   font-size: 12px;
   font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 6px rgba(255, 204, 0, 0.35);
 }
 
 .day-cell.checked {
-  background: rgba(109, 127, 110, 0.06);
+  background: rgba(255, 204, 0, 0.08);
 }
 
 .settings {
   position: fixed;
-  top: 24px;
+  top: 84px;
   right: 24px;
   z-index: 10;
 }
 
 @media (max-width: 768px) {
-  .cell {
-    min-height: 74px;
-    padding: 6px;
+  .hero-title {
+    gap: 10px;
   }
-  .day-title {
+  .cell {
+    min-height: 86px;
+    padding: 8px;
+  }
+  .day-title,
+  .day-hint {
     display: none;
   }
+  .day-number {
+    width: 24px;
+    height: 24px;
+    font-size: 13px;
+  }
   .settings {
-    top: 12px;
+    top: 72px;
     right: 12px;
   }
 }
