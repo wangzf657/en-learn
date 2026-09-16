@@ -132,7 +132,7 @@ watch(
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 22px;
+  font-size: 32px;
   margin-bottom: 18px;
   padding-bottom: 14px;
   border-bottom: 2px dashed var(--border);
@@ -154,7 +154,7 @@ watch(
 }
 
 .sentence-card {
-  padding: 18px 20px;
+  padding: 22px 24px;
   border-radius: var(--radius-sm);
   border: 2px solid var(--border);
   background: var(--card);
@@ -199,9 +199,9 @@ watch(
 /* 朗读按钮:比 .icon-btn 更小更轻,不抢台词本身 */
 .speak-btn {
   flex: none;
-  width: 34px;
-  height: 34px;
-  margin-top: -2px;
+  width: 44px;
+  height: 44px;
+  margin-top: -4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -231,6 +231,11 @@ watch(
   animation: speak-pulse 1.1s ease-in-out infinite;
 }
 
+.speak-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
 @keyframes speak-pulse {
   0%,
   100% {
@@ -243,15 +248,15 @@ watch(
 
 .en {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 32px;
   font-weight: 700;
-  line-height: 1.5;
-  margin: 0 0 6px;
+  line-height: 1.45;
+  margin: 0 0 8px;
   color: var(--ink);
 }
 
 .zh {
-  font-size: 15px;
+  font-size: 24px;
   color: var(--muted);
   margin: 0;
 }
@@ -259,7 +264,7 @@ watch(
 .words {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 14px;
 }
 
@@ -267,11 +272,11 @@ watch(
   display: inline-flex;
   flex-direction: column;
   gap: 2px;
-  padding: 8px 12px;
+  padding: 12px 16px;
   border-radius: var(--radius-xs);
   background: var(--purple-bg);
   border: 2px solid transparent;
-  font-size: 13px;
+  font-size: 20px;
   cursor: pointer;
   transition: transform var(--transition), border-color var(--transition),
     background var(--transition);
@@ -315,12 +320,12 @@ watch(
 .word-chip .phonetic {
   font-family: var(--font-mono);
   color: var(--purple);
-  font-size: 12px;
+  font-size: 17px;
 }
 
 .word-chip .note {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 17px;
   line-height: 1.4;
 }
 

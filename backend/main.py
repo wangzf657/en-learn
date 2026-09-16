@@ -1,7 +1,9 @@
 import json
 import os
 import re
+import shutil
 import sqlite3
+import sys
 import tempfile
 import threading
 import webbrowser
@@ -17,12 +19,18 @@ from pydantic import BaseModel
 
 from echoic import available_providers, score_recording
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT / "data"
+if getattr(sys, "frozen", False):
+    # PyInstaller 打包:只读资源在解包目录,可写数据放 exe 旁边
+    BASE_DIR = Path(sys.executable).resolve().parent
+    ASSET_DIR = Path(getattr(sys, "_MEIPASS"))
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    ASSET_DIR = BASE_DIR
+DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "enlearn.db"
 SCORING_PATH = DATA_DIR / "scoring.json"
 LIBRARY_PATH = DATA_DIR / "library.json"
-DIST = ROOT / "frontend" / "dist"
+DIST = ASSET_DIR / "frontend" / "dist"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS courses (
@@ -61,13 +69,35 @@ def db():
     return conn
 
 
+SCHEMA_VERSION = 1
+# 结构升级记录:每项 (目标版本, SQL 脚本)。库版本低于目标版本时按序原地执行(原子包在 BEGIN/COMMIT 里),
+# 首次执行前自动备份 enlearn.db.bak;数据文件版本比程序新则拒绝启动。
+MIGRATIONS = [
+    # 示例: (2, "ALTER TABLE materials ADD COLUMN note TEXT;"),
+]
+
+
 def init_db():
     DATA_DIR.mkdir(exist_ok=True)
-    with closing(db()) as conn, conn:
-        conn.executescript(SCHEMA)
-        # 旧「书籍库」模型已废弃,数据为空,直接换表不迁移
-        conn.execute("DROP TABLE IF EXISTS day_books")
-        conn.execute("DROP TABLE IF EXISTS books")
+    with closing(db()) as conn:
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            sys.exit(f"数据文件比程序新(数据 v{version},程序 v{SCHEMA_VERSION}),请使用新版 EnLearn")
+        if version == 0:
+            # 全新库,或旧版未打版本戳的库:SCHEMA 全是 IF NOT EXISTS,补跑无副作用
+            conn.executescript(SCHEMA)
+            # 旧「书籍库」模型已废弃,数据为空,直接换表不迁移
+            conn.execute("DROP TABLE IF EXISTS day_books")
+            conn.execute("DROP TABLE IF EXISTS books")
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            conn.commit()
+            return
+        pending = [(v, sql) for v, sql in MIGRATIONS if v > version]
+        if not pending:
+            return
+        shutil.copy2(DB_PATH, DATA_DIR / "enlearn.db.bak")
+        for to_ver, sql in pending:
+            conn.executescript(f"BEGIN;{sql}\nPRAGMA user_version = {to_ver};COMMIT;")
 
 
 def library_config() -> dict:

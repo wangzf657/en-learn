@@ -21,7 +21,8 @@ const toast = ref('')
 const celebrate = ref(false)
 
 const srtCues = ref([])
-const subtitleStyle = ref('sub-clean')
+const subtitleStyle = ref('sub-cinema')
+const subtitleSize = ref('sub-size-lg')
 
 const videoEl = ref(null)
 const progressEl = ref(null)
@@ -47,9 +48,6 @@ const cues = computed(() =>
     : srtCues.value,
 )
 
-const segmentStopAt = ref(null)
-let segmentRaf = 0
-
 const subtitleOpen = ref(true)
 const isFullscreen = ref(false)
 const layoutRef = ref(null)
@@ -58,7 +56,6 @@ const repeatOpen = ref(false)
 const repeatSentence = ref(null)
 
 watch(currentMaterialIndex, () => {
-  clearSegment()
   currentTime.value = 0
   duration.value = 0
   loadCuesFallback()
@@ -69,15 +66,9 @@ watch(currentMaterialIndex, () => {
   }
 })
 
-// 播放恢复时重启片段检测循环(缓冲暂停会让 rAF 循环自然停下)
-watch(playing, (isPlaying) => {
-  if (isPlaying) startSegmentLoop()
-})
-
 function openRepeat(s) {
   repeatSentence.value = s
   repeatOpen.value = true
-  clearSegment()
   videoEl.value?.pause()
 }
 
@@ -163,37 +154,9 @@ async function loadCuesFallback() {
   }
 }
 
-function clearSegment() {
-  segmentStopAt.value = null
-  if (segmentRaf) {
-    cancelAnimationFrame?.(segmentRaf)
-    segmentRaf = 0
-  }
-}
-
-function segmentTick() {
-  segmentRaf = 0
-  const v = videoEl.value
-  if (segmentStopAt.value == null || !v) return
-  if (v.currentTime >= segmentStopAt.value) {
-    v.pause()
-    clearSegment()
-    return
-  }
-  if (!v.paused) segmentRaf = requestAnimationFrame(segmentTick)
-}
-
-function startSegmentLoop() {
-  if (segmentRaf || segmentStopAt.value == null) return
-  const v = videoEl.value
-  if (v && v.paused) return
-  segmentRaf = requestAnimationFrame(segmentTick)
-}
-
 function togglePlay() {
   const v = videoEl.value
   if (!v) return
-  clearSegment()
   if (v.paused) v.play()
   else v.pause()
 }
@@ -203,11 +166,6 @@ function onTimeUpdate() {
   if (!v) return
   currentTime.value = v.currentTime
   if (v.duration && !isNaN(v.duration)) duration.value = v.duration
-  // rAF 在 happy-dom 测试环境下可能不推进,这里做兜底检测
-  if (segmentStopAt.value != null && v.currentTime >= segmentStopAt.value) {
-    v.pause()
-    clearSegment()
-  }
 }
 
 function onLoadedMetadata() {
@@ -217,7 +175,6 @@ function onLoadedMetadata() {
 
 function onEnded() {
   playing.value = false
-  clearSegment()
 }
 
 async function doCheckin() {
@@ -241,7 +198,6 @@ async function doCheckin() {
 function seekToRatio(ratio) {
   const v = videoEl.value
   if (!v || !duration.value) return
-  clearSegment()
   const t = Math.max(0, Math.min(duration.value, ratio * duration.value))
   v.currentTime = t
   currentTime.value = t
@@ -271,14 +227,11 @@ function stopDrag() {
   window.removeEventListener('mouseup', stopDrag)
 }
 
-function cycleRate() {
-  const v = videoEl.value
-  if (!v) return
-  let i = rates.indexOf(playbackRate.value)
-  if (i < 0) i = 1
-  const next = rates[(i + 1) % rates.length]
+function applyRate(e) {
+  const next = Number(e.target.value)
   playbackRate.value = next
-  v.playbackRate = next
+  const v = videoEl.value
+  if (v) v.playbackRate = next
 }
 
 function setVolume() {
@@ -291,9 +244,7 @@ function seekToSentence(s) {
   if (!v) return
   v.currentTime = s.start
   currentTime.value = s.start
-  segmentStopAt.value = s.end
   v.play()
-  startSegmentLoop()
 }
 
 function formatTime(s) {
@@ -306,7 +257,6 @@ function formatTime(s) {
 onBeforeUnmount(() => {
   const v = videoEl.value
   if (v) v.pause()
-  clearSegment()
   window.removeEventListener('mousemove', onDrag)
   window.removeEventListener('mouseup', stopDrag)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
@@ -381,6 +331,7 @@ onBeforeUnmount(() => {
             :current-time="currentTime"
             :enabled="subtitleStyle !== 'sub-off'"
             :style-class="subtitleStyle"
+            :size="subtitleSize"
           />
         </div>
 
@@ -406,7 +357,15 @@ onBeforeUnmount(() => {
             </div>
             <div class="time-row">
               <span class="time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
-              <button class="rate-btn" @click="cycleRate" title="切换倍速">{{ playbackRate }}×</button>
+              <select
+                class="rate-select"
+                :value="playbackRate"
+                aria-label="播放倍速"
+                title="播放倍速"
+                @change="applyRate"
+              >
+                <option v-for="r in rates" :key="r" :value="r">{{ r }}×</option>
+              </select>
             </div>
           </div>
 
@@ -458,7 +417,7 @@ onBeforeUnmount(() => {
               </svg>
             </button>
 
-            <SubtitleStylePicker v-model="subtitleStyle" />
+            <SubtitleStylePicker v-model="subtitleStyle" v-model:size="subtitleSize" />
           </div>
         </div>
       </section>
@@ -720,27 +679,27 @@ video {
 
 .time {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 16px;
   color: var(--muted);
 }
 
-.rate-btn {
-  padding: 6px 14px;
+.rate-select {
+  min-height: 48px;
+  padding: 8px 38px 8px 18px;
   border-radius: 999px;
-  background: #fff;
+  background-color: #fff;
   border: 2px solid var(--border);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--blue);
   box-shadow: var(--shadow-pop);
-  transition: border-color var(--transition), background var(--transition), transform var(--transition);
+  cursor: pointer;
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 
-.rate-btn:hover {
+.rate-select:hover {
   border-color: var(--blue);
-  background: var(--blue-bg);
-  transform: translateY(-1px);
 }
 
 .volume-area {

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { adminApi } from '../api.js'
 import { parseSrt } from '../utils/srt.js'
 import SubtitleOverlay from '../components/SubtitleOverlay.vue'
@@ -19,16 +19,14 @@ const playing = ref(false)
 const srtCues = ref([])
 const sentences = ref([])
 const error = ref('')
-const subtitleStyle = ref('sub-clean')
+const subtitleStyle = ref('sub-cinema')
+const subtitleSize = ref('sub-size-lg')
 const loadingCourses = ref(false)
 const loadingMaterials = ref(new Set())
 const isFullscreen = ref(false)
 const sidebarExpanded = ref(true)
 
-const segmentStopAt = ref(null)
-let segmentRaf = 0
 let srtReqId = 0
-
 // 浮层字幕优先同步派生自内存中的 sentences(已带 start/end/en),切换素材立即有数据不闪空;
 // 仅当 sentences 为空才用 srt 文本兜底。
 const cues = computed(() =>
@@ -106,7 +104,6 @@ async function playMaterial(material) {
   selectedMaterial.value = material
   currentTime.value = 0
   duration.value = 0
-  clearSegment()
   srtCues.value = []
   sentences.value = material.subtitle?.sentences || []
 
@@ -134,42 +131,9 @@ async function playMaterial(material) {
   }
 }
 
-function clearSegment() {
-  segmentStopAt.value = null
-  if (segmentRaf) {
-    cancelAnimationFrame?.(segmentRaf)
-    segmentRaf = 0
-  }
-}
-
-function segmentTick() {
-  segmentRaf = 0
-  const v = videoEl.value
-  if (segmentStopAt.value == null || !v) return
-  if (v.currentTime >= segmentStopAt.value) {
-    v.pause()
-    clearSegment()
-    return
-  }
-  if (!v.paused) segmentRaf = requestAnimationFrame(segmentTick)
-}
-
-function startSegmentLoop() {
-  if (segmentRaf || segmentStopAt.value == null) return
-  const v = videoEl.value
-  if (v && v.paused) return
-  segmentRaf = requestAnimationFrame(segmentTick)
-}
-
-// 播放恢复时重启片段检测循环(缓冲暂停会让 rAF 循环自然停下)
-watch(playing, (isPlaying) => {
-  if (isPlaying) startSegmentLoop()
-})
-
 function togglePlay() {
   const v = videoEl.value
   if (!v) return
-  clearSegment()
   if (v.paused) v.play()
   else v.pause()
 }
@@ -179,11 +143,6 @@ function onTimeUpdate() {
   if (!v) return
   currentTime.value = v.currentTime
   if (v.duration && !isNaN(v.duration)) duration.value = v.duration
-  // rAF 在 happy-dom 测试环境下可能不推进,这里做兜底检测
-  if (segmentStopAt.value != null && v.currentTime >= segmentStopAt.value) {
-    v.pause()
-    clearSegment()
-  }
 }
 
 function onLoadedMetadata() {
@@ -196,9 +155,7 @@ function seekToSentence(s) {
   if (!v) return
   v.currentTime = s.start
   currentTime.value = s.start
-  segmentStopAt.value = s.end
   v.play()
-  startSegmentLoop()
 }
 
 function formatTime(s) {
@@ -232,7 +189,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   videoEl.value?.pause()
-  clearSegment()
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   if (document.fullscreenElement === stageRef.value) {
     document.exitFullscreen?.().catch(() => {})
@@ -262,7 +218,7 @@ onBeforeUnmount(() => {
             @loadedmetadata="onLoadedMetadata"
             @play="playing = true"
             @pause="playing = false"
-            @ended="clearSegment"
+            @ended="playing = false"
           ></video>
           <div v-else class="video-placeholder">
             <span class="placeholder-emoji" aria-hidden="true">🎬</span>
@@ -273,6 +229,7 @@ onBeforeUnmount(() => {
             :current-time="currentTime"
             :enabled="subtitleStyle !== 'sub-off'"
             :style-class="subtitleStyle"
+            :size="subtitleSize"
           />
         </div>
 
@@ -328,8 +285,8 @@ onBeforeUnmount(() => {
               <line x1="3" y1="21" x2="10" y2="14"></line>
             </svg>
           </button>
-
-          <SubtitleStylePicker v-model="subtitleStyle" />
+          <!-- eslint-disable-next-line vue/no-v-model-argument -->
+          <SubtitleStylePicker v-model="subtitleStyle" v-model:size="subtitleSize" />
         </div>
 
         <div v-if="error" class="error-detail" style="margin: 0 20px 16px">{{ error }}</div>

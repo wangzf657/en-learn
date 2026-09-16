@@ -29,6 +29,7 @@ describe('LocalPlay.vue course playback', () => {
   let originalExitFullscreen
 
   beforeEach(() => {
+    localStorage.clear()
     mockFetch((url) => {
       if (url === '/api/admin/courses') {
         return { status: 200, body: { courses } }
@@ -110,14 +111,13 @@ describe('LocalPlay.vue course playback', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     const overlay = wrapper.findComponent({ name: 'SubtitleOverlay' })
-    expect(overlay.classes()).toContain('sub-clean')
+    expect(overlay.classes()).toContain('sub-cinema')
 
-    const offBtn = wrapper.findAll('.style-btn').find((b) => b.text() === '关闭')
-    await offBtn.trigger('click')
+    await wrapper.find('.style-select').setValue('sub-off')
     expect(overlay.classes()).toContain('sub-off')
   })
 
-  it('plays a sentence segment and pauses at its end', async () => {
+  it('plays from the clicked sentence start without pausing at its end', async () => {
     const { wrapper } = await mountWithRouter(LocalPlay, {}, '/local')
 
     await wrapper.find('.course-header').trigger('click')
@@ -127,20 +127,19 @@ describe('LocalPlay.vue course playback', () => {
 
     const video = wrapper.find('video').element
     const pauseSpy = vi.fn()
-    video.play = () => Promise.resolve()
+    let played = false
+    video.play = () => { played = true; return Promise.resolve() }
     video.pause = pauseSpy
 
     await wrapper.find('.sentence-card').trigger('click')
     expect(video.currentTime).toBe(1)
+    expect(played).toBe(true)
 
+    // 新行为:不在句尾自动暂停,越过该句 end 继续往下播
     await dispatchTimeUpdate(video, 2.5)
-    expect(pauseSpy).not.toHaveBeenCalled()
-
     await dispatchTimeUpdate(video, 3)
-    expect(pauseSpy).toHaveBeenCalledTimes(1)
-
     await dispatchTimeUpdate(video, 4)
-    expect(pauseSpy).toHaveBeenCalledTimes(1)
+    expect(pauseSpy).not.toHaveBeenCalled()
   })
 
   it('toggles sidebar collapsed state', async () => {

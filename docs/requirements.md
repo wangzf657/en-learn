@@ -74,7 +74,7 @@
 
 | 项 | 要求 |
 |---|---|
-| 部署 | Windows 双击 `start.bat` 一键启动（首次自动建 venv 装依赖），浏览器自动打开 |
+| 部署 | 双击根目录 `build.bat` 一键构建 → 单文件 `release\EnLearn.exe`；拷到任意 Win10+ 机器直接运行（首启在 exe 旁生成 `data\`），浏览器自动打开 |
 | 架构 | 单进程服务（API + 前端静态文件同端口），本机 127.0.0.1 访问 |
 | 持久化 | SQLite 单文件（`data/enlearn.db`），无外部数据库 |
 | 兼容 | 现代 Chrome/Edge 即可 |

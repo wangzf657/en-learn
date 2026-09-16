@@ -426,7 +426,7 @@ function close() {
 
 .repeat-card {
   width: 100%;
-  max-width: 580px;
+  max-width: 860px;
   max-height: calc(100svh - 48px);
   overflow-y: auto;
   display: flex;
@@ -447,32 +447,32 @@ function close() {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-size: 22px;
+  font-size: 30px;
 }
 
 .header-emoji {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: #fff;
-  font-size: 20px;
+  font-size: 24px;
   box-shadow: var(--shadow-sm);
   animation: wiggle 3.2s ease-in-out infinite;
 }
 
 .repeat-body {
-  padding: 24px;
+  padding: 28px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
 }
 
 .target-section {
   text-align: center;
-  padding: 16px 14px;
+  padding: 20px 18px;
   border-radius: var(--radius-sm);
   background: linear-gradient(180deg, var(--cyan-bg), var(--blue-bg));
   border: 2px dashed rgba(63, 140, 255, 0.35);
@@ -480,15 +480,15 @@ function close() {
 
 .target-en {
   font-family: var(--font-display);
-  font-size: 27px;
+  font-size: 40px;
   font-weight: 700;
-  line-height: 1.4;
-  margin: 0 0 8px;
+  line-height: 1.35;
+  margin: 0 0 10px;
   color: var(--ink);
 }
 
 .target-zh {
-  font-size: 15px;
+  font-size: 24px;
   color: var(--muted);
   margin: 0;
 }
@@ -505,10 +505,10 @@ function close() {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 36px;
-  padding: 6px 14px;
+  min-height: 46px;
+  padding: 8px 18px;
   border-radius: var(--radius-pill);
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--blue);
   background: rgba(255, 255, 255, 0.85);
@@ -559,7 +559,7 @@ function close() {
   align-items: flex-start;
   gap: 2px;
   max-width: 100%;
-  padding: 12px 16px;
+  padding: 14px 18px;
   border-radius: var(--radius-xs);
   text-align: left;
   color: var(--ink);
@@ -587,7 +587,7 @@ function close() {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 15px;
+  font-size: 22px;
   font-weight: 700;
 }
 
@@ -607,12 +607,12 @@ function close() {
 
 .wc-phonetic {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 17px;
   color: var(--purple);
 }
 
 .wc-note {
-  font-size: 12px;
+  font-size: 17px;
   line-height: 1.4;
   color: var(--muted);
 }
@@ -631,7 +631,7 @@ function close() {
 }
 
 .restore-btn {
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--blue);
   padding: 2px 8px;
@@ -644,7 +644,7 @@ function close() {
 }
 
 .custom-input label {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--muted);
 }
@@ -662,8 +662,8 @@ function close() {
 
 .record-btn {
   position: relative;
-  width: 156px;
-  height: 156px;
+  width: 180px;
+  height: 180px;
   border-radius: 50%;
   display: inline-flex;
   flex-direction: column;
@@ -721,19 +721,19 @@ function close() {
 }
 
 .record-btn svg {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
 }
 
 .record-label {
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 700;
 }
 
 .rec-dot {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: #fff;
   animation: pulse 1.2s ease-in-out infinite;
@@ -741,7 +741,7 @@ function close() {
 
 .record-hint {
   margin: 0;
-  font-size: 13px;
+  font-size: 18px;
   color: var(--muted);
 }
 
@@ -779,7 +779,7 @@ function close() {
 
 .score-number {
   font-family: var(--font-display);
-  font-size: 40px;
+  font-size: 56px;
   font-weight: 700;
   line-height: 1.2;
   color: var(--orange-ink);
@@ -815,11 +815,11 @@ function close() {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
-  padding: 10px 20px;
+  min-height: 52px;
+  padding: 12px 24px;
   border-radius: var(--radius-pill);
   font-family: var(--font-display);
-  font-size: 15px;
+  font-size: 19px;
   font-weight: 700;
   color: #fff;
   background: linear-gradient(180deg, #b98bff, var(--purple));
@@ -880,15 +880,21 @@ function close() {
   .repeat-card {
     max-width: 100%;
   }
+  .repeat-header h3 {
+    font-size: 24px;
+  }
   .target-en {
-    font-size: 22px;
+    font-size: 30px;
+  }
+  .target-zh {
+    font-size: 20px;
   }
   .record-btn {
-    width: 132px;
-    height: 132px;
+    width: 148px;
+    height: 148px;
   }
   .score-number {
-    font-size: 34px;
+    font-size: 46px;
   }
 }
 </style>

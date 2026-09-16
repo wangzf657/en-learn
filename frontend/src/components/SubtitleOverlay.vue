@@ -5,7 +5,8 @@ const props = defineProps({
   cues: { type: Array, default: () => [] },
   currentTime: { type: Number, default: 0 },
   enabled: { type: Boolean, default: true },
-  styleClass: { type: String, default: 'sub-clean' },
+  styleClass: { type: String, default: 'sub-cinema' },
+  size: { type: String, default: 'sub-size-lg' },
 })
 
 const currentCue = computed(() => {
@@ -16,7 +17,7 @@ const currentCue = computed(() => {
 </script>
 
 <template>
-  <div class="subtitle-overlay" :class="[styleClass, { 'sub-off': !enabled }]" aria-live="polite">
+  <div class="subtitle-overlay" :class="[styleClass, size, { 'sub-off': !enabled }]" aria-live="polite">
     <Transition name="cue" mode="out-in">
       <p v-if="currentCue" :key="currentCue.text" class="subtitle-cue">{{ currentCue.text }}</p>
     </Transition>
@@ -36,6 +37,29 @@ const currentCue = computed(() => {
   pointer-events: none;
   z-index: 5;
   min-height: 2em;
+  /* 字号三档:标准/大/特大,默认档已比旧版 32px 更大,1 米视距可用 */
+  --cue-size: 40px;
+  --cue-size-cinema: 48px;
+}
+
+/*
+  字号分档用 CSS 变量:cinema 模式与窄屏断点各自只定义一遍,
+  不会出现某模式/断点下反而更小。类选择器带 .subtitle-overlay 前缀,
+  保证档位永远压过基础值(不依赖规则书写顺序)。
+*/
+.subtitle-overlay.sub-size-md {
+  --cue-size: 40px;
+  --cue-size-cinema: 48px;
+}
+
+.subtitle-overlay.sub-size-lg {
+  --cue-size: 48px;
+  --cue-size-cinema: 58px;
+}
+
+.subtitle-overlay.sub-size-xl {
+  --cue-size: 56px;
+  --cue-size-cinema: 68px;
 }
 
 .subtitle-cue {
@@ -43,7 +67,7 @@ const currentCue = computed(() => {
   margin: 0;
   padding: 0.4em 0.85em;
   border-radius: 0.75em;
-  font-size: 20px;
+  font-size: var(--cue-size);
   font-weight: 700;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -61,7 +85,7 @@ const currentCue = computed(() => {
 .sub-cinema .subtitle-cue {
   color: #ffe25a;
   font-family: var(--font-display);
-  font-size: 25px;
+  font-size: var(--cue-size-cinema);
   letter-spacing: 0.01em;
   text-shadow:
     0 2px 5px rgba(0, 0, 0, 0.92),
@@ -102,11 +126,21 @@ const currentCue = computed(() => {
 */
 
 @media (max-width: 640px) {
-  .subtitle-cue {
-    font-size: 17px;
+  .subtitle-overlay {
+    --cue-size: 32px;
+    --cue-size-cinema: 38px;
   }
-  .sub-cinema .subtitle-cue {
-    font-size: 20px;
+  .subtitle-overlay.sub-size-md {
+    --cue-size: 32px;
+    --cue-size-cinema: 38px;
+  }
+  .subtitle-overlay.sub-size-lg {
+    --cue-size: 38px;
+    --cue-size-cinema: 46px;
+  }
+  .subtitle-overlay.sub-size-xl {
+    --cue-size: 44px;
+    --cue-size-cinema: 54px;
   }
 }
 </style>

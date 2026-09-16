@@ -69,6 +69,7 @@ describe('Play.vue core interactions', () => {
 
   beforeEach(() => {
     fetchCalls = []
+    localStorage.clear()
     origCreateObjectURL = URL.createObjectURL
     origRevokeObjectURL = URL.revokeObjectURL
     URL.createObjectURL = vi.fn(() => 'blob:mock')
@@ -126,7 +127,7 @@ describe('Play.vue core interactions', () => {
     expect(played).toBe(true)
   })
 
-  it('pauses automatically at the clicked sentence end', async () => {
+  it('keeps playing past the clicked sentence end', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
 
     const video = wrapper.find('video').element
@@ -137,29 +138,10 @@ describe('Play.vue core interactions', () => {
     await wrapper.findAll('.sentence-card')[1].trigger('click')
     expect(video.currentTime).toBe(5.0)
 
+    // 新行为:不在句尾自动暂停,越过该句 end 继续往下播
     await dispatchTimeUpdate(video, 7.9)
-    expect(pauseSpy).not.toHaveBeenCalled()
-
     await dispatchTimeUpdate(video, 8.0)
-    expect(pauseSpy).toHaveBeenCalledTimes(1)
-
-    // 状态已清除,不会在过期时间点重复暂停
-    await dispatchTimeUpdate(video, 9.0)
-    expect(pauseSpy).toHaveBeenCalledTimes(1)
-  })
-
-  it('drops the segment stop when the user pauses with the play button', async () => {
-    const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
-
-    const video = wrapper.find('video').element
-    const pauseSpy = vi.fn()
-    video.play = () => Promise.resolve()
-    video.pause = pauseSpy
-
-    await wrapper.findAll('.sentence-card')[1].trigger('click')
-    await wrapper.find('.play-btn').trigger('click')
-
-    await dispatchTimeUpdate(video, 9.0)
+    await dispatchTimeUpdate(video, 9.5)
     expect(pauseSpy).not.toHaveBeenCalled()
   })
 
@@ -238,18 +220,24 @@ describe('Play.vue core interactions', () => {
     expect(wrapper.findAll('.sentence-card')[0].find('.en').text()).toBe('Table for two.')
   })
 
-  it('loads SRT cues and switches subtitle style classes', async () => {
+  it('loads SRT cues and switches subtitle style and size via selects', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
     await new Promise((r) => setTimeout(r, 10))
 
     const overlay = wrapper.findComponent({ name: 'SubtitleOverlay' })
     expect(overlay.exists()).toBe(true)
-    expect(overlay.classes()).toContain('sub-clean')
-
-    const buttons = wrapper.findAll('.style-btn')
-    const cinema = buttons.find((b) => b.text() === '影院')
-    await cinema.trigger('click')
     expect(overlay.classes()).toContain('sub-cinema')
+    expect(overlay.classes()).toContain('sub-size-lg')
+
+    await wrapper.find('.style-select').setValue('sub-opaque')
+    expect(overlay.classes()).toContain('sub-opaque')
+
+    await wrapper.find('.size-select').setValue('sub-size-xl')
+    expect(overlay.classes()).toContain('sub-size-xl')
+
+    // 设置持久化,刷新后仍生效
+    expect(localStorage.getItem('enlearn.subtitleStyle')).toBe('sub-opaque')
+    expect(localStorage.getItem('enlearn.subtitleSize')).toBe('sub-size-xl')
   })
 
   it('clicks manual checkin button, calls checkin endpoint and shows checked badge', async () => {

@@ -2,4 +2,6 @@ fastapi
 uvicorn[standard]
 python-multipart
 requests
+pillow  # exe icon conversion (build only)
+pyinstaller
 # echoic providers: add per-provider SDK when implemented, e.g. tencentcloud-sdk-python-soe
