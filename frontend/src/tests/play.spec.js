@@ -156,7 +156,7 @@ describe('Play.vue core interactions', () => {
     expect(wrapper.find('.repeat-modal').exists()).toBe(true)
 
     const recordBtn = wrapper.find('.record-btn')
-    expect(recordBtn.text()).toBe('点击录音')
+    expect(recordBtn.text()).toBe('点击开始录音')
 
     await recordBtn.trigger('click')
     await flushPromises()
@@ -170,9 +170,9 @@ describe('Play.vue core interactions', () => {
     const modal = wrapper.find('.repeat-modal')
     expect(modal.find('.score-number').exists()).toBe(true)
     expect(modal.find('.score-stars').exists()).toBe(true)
-    expect(modal.text()).toContain('准确度 83')
-    expect(modal.text()).toContain('流利度 78')
-    expect(modal.text()).toContain('完整度 90')
+    expect(modal.text()).toContain('准 83')
+    expect(modal.text()).toContain('流 78')
+    expect(modal.text()).toContain('完 90')
     expect(modal.findAll('.ws-word').length).toBeGreaterThan(0)
     expect(modal.findAll('.word-good').length).toBeGreaterThan(0)
     expect(modal.find('audio').attributes('src')).toBe('blob:mock')

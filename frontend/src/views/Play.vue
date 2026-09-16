@@ -433,10 +433,10 @@ onBeforeUnmount(() => {
           <template #actions="{ s }">
             <div class="repeat-row">
               <button
-                class="btn btn-sm repeat-btn btn-primary"
+                class="btn repeat-btn btn-primary"
                 @click.stop="openRepeat(s)"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
                   <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                 </svg>
@@ -735,9 +735,10 @@ video {
 }
 
 .repeat-btn {
-  min-width: 126px;
-  min-height: 46px;
-  font-size: 15px;
+  min-width: 150px;
+  min-height: 56px;
+  font-size: 18px;
+  gap: 8px;
 }
 
 .toast {

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue'
+import { configureUtterance } from '../utils/tts.js'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -26,9 +27,7 @@ function toggleSpeak(text, key) {
   if (speakingKey.value === key) return stopSpeaking()
   const synth = window.speechSynthesis
   synth.cancel()
-  const utter = new SpeechSynthesisUtterance(text)
-  utter.lang = 'en-US'
-  utter.rate = 0.9
+  const utter = configureUtterance(new SpeechSynthesisUtterance(text))
   const done = () => {
     if (speakingKey.value === key) speakingKey.value = null
   }
@@ -132,9 +131,9 @@ watch(
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 32px;
-  margin-bottom: 18px;
-  padding-bottom: 14px;
+  font-size: 22px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
   border-bottom: 2px dashed var(--border);
   color: var(--ink);
 }
@@ -150,11 +149,11 @@ watch(
 .sentence-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 .sentence-card {
-  padding: 22px 24px;
+  padding: 16px 18px;
   border-radius: var(--radius-sm);
   border: 2px solid var(--border);
   background: var(--card);
@@ -199,9 +198,9 @@ watch(
 /* 朗读按钮:比 .icon-btn 更小更轻,不抢台词本身 */
 .speak-btn {
   flex: none;
-  width: 44px;
-  height: 44px;
-  margin-top: -4px;
+  width: 38px;
+  height: 38px;
+  margin-top: -2px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -232,8 +231,8 @@ watch(
 }
 
 .speak-btn svg {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
 }
 
 @keyframes speak-pulse {
@@ -248,15 +247,15 @@ watch(
 
 .en {
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 1.45;
-  margin: 0 0 8px;
+  line-height: 1.4;
+  margin: 0 0 6px;
   color: var(--ink);
 }
 
 .zh {
-  font-size: 18px;
+  font-size: 14px;
   color: var(--muted);
   margin: 0;
 }
@@ -264,19 +263,19 @@ watch(
 .words {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .word-chip {
   display: inline-flex;
   flex-direction: column;
   gap: 2px;
-  padding: 12px 16px;
+  padding: 8px 12px;
   border-radius: var(--radius-xs);
   background: var(--purple-bg);
   border: 2px solid transparent;
-  font-size: 20px;
+  font-size: 16px;
   cursor: pointer;
   transition: transform var(--transition), border-color var(--transition),
     background var(--transition);
@@ -320,12 +319,12 @@ watch(
 .word-chip .phonetic {
   font-family: var(--font-mono);
   color: var(--purple);
-  font-size: 17px;
+  font-size: 13px;
 }
 
 .word-chip .note {
   color: var(--muted);
-  font-size: 17px;
+  font-size: 14px;
   line-height: 1.4;
 }
 

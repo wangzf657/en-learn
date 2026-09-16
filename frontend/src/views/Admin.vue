@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { adminApi, scoringApi } from '../api.js'
+import { loadTtsSettings, saveTtsSettings, listEnglishVoices, preview } from '../utils/tts.js'
 
 const courses = ref([])
 const courseDetails = ref({})
@@ -47,6 +48,14 @@ const scoringOptions = ref({})
 // 与后端 echoic/providers/unisound.py 的兜底值保持一致
 const SCORING_DEFAULTS = { mode: 'E', base_url: 'http://edu.hivoice.cn/eval' }
 
+// 浏览器端选声(纯前端,localStorage 持久化)
+const ttsSettings = loadTtsSettings()
+const ttsVoices = ref([])
+const ttsVoiceURI = ref(ttsSettings.voiceURI)
+const ttsRate = ref(ttsSettings.rate)
+const ttsRates = [0.5, 0.75, 0.9, 1, 1.1, 1.25]
+const ttsSaved = ref(false)
+
 const activeTab = ref('settings')
 const tabs = [
   { key: 'settings', label: '通用设置' },
@@ -63,6 +72,7 @@ onMounted(async () => {
   await loadCourses()
   await loadScheduleDays()
   await loadScoring()
+  loadTtsVoices()
 })
 
 watch(scoringProvider, (next) => {
@@ -161,6 +171,28 @@ async function saveScoring() {
   } catch (e) {
     scoringError.value = e.detail || e.message
   }
+}
+
+function loadTtsVoices() {
+  if (!('speechSynthesis' in window)) return
+  const synth = window.speechSynthesis
+  const update = () => {
+    ttsVoices.value = listEnglishVoices()
+  }
+  update()
+  if (typeof synth.addEventListener === 'function') {
+    synth.addEventListener('voiceschanged', update)
+  }
+}
+
+function previewTts() {
+  preview('Hello, how are you today?', { voiceURI: ttsVoiceURI.value, rate: ttsRate.value })
+}
+
+function saveTts() {
+  saveTtsSettings({ voiceURI: ttsVoiceURI.value, rate: ttsRate.value })
+  ttsSaved.value = true
+  setTimeout(() => (ttsSaved.value = false), 2200)
 }
 
 async function loadCourses() {
@@ -512,6 +544,31 @@ function selectCalendarDate(date) {
             <span v-if="scoringSaved" class="save-hint">已保存</span>
           </div>
           <div v-if="scoringError" class="full error-detail">{{ scoringError }}</div>
+        </div>
+      </div>
+
+      <div class="tts-section">
+        <h3>浏览器端选声</h3>
+        <p class="tts-hint">选择系统内置的英语语音并试听，跟读与台词朗读将使用该音色。</p>
+        <div class="form-grid">
+          <label>
+            <span>语音</span>
+            <select v-model="ttsVoiceURI">
+              <option value="">系统默认</option>
+              <option v-for="v in ttsVoices" :key="v.voiceURI" :value="v.voiceURI">{{ v.name }}（{{ v.lang }}）</option>
+            </select>
+          </label>
+          <label>
+            <span>语速</span>
+            <select v-model.number="ttsRate">
+              <option v-for="r in ttsRates" :key="r" :value="r">{{ r }}</option>
+            </select>
+          </label>
+          <div class="full form-actions">
+            <button class="btn btn-primary" @click="previewTts">试听</button>
+            <button class="btn btn-secondary" @click="saveTts">保存音色</button>
+            <span v-if="ttsSaved" class="save-hint">已保存</span>
+          </div>
         </div>
       </div>
     </div>
@@ -884,6 +941,24 @@ function selectCalendarDate(date) {
   font-size: 17px;
   margin-bottom: 16px;
   color: var(--ink);
+}
+
+.tts-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 2px dashed var(--border);
+}
+
+.tts-section h3 {
+  font-size: 17px;
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+
+.tts-hint {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 16px;
 }
 
 .form-grid {
