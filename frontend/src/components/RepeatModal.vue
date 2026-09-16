@@ -188,7 +188,7 @@ function close() {
     <div v-if='open' class='repeat-modal' @click.self='close'>
       <div class='repeat-card card' role='dialog' aria-modal='true' aria-label='跟读练习'>
         <header class='repeat-header'>
-          <h3>跟读练习</h3>
+          <h3><span class='header-emoji' aria-hidden='true'>🎤</span>跟读练习</h3>
           <button class='icon-btn' type='button' aria-label='关闭' @click='close'>
             <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
               <path d='M18 6L6 18'/>
@@ -258,8 +258,10 @@ function close() {
               <svg
                 v-for='(filled, i) in stars'
                 :key='i'
-                width='22'
-                height='22'
+                class='star'
+                :style='{ "--i": i }'
+                width='26'
+                height='26'
                 viewBox='0 0 24 24'
                 :fill='filled ? "currentColor" : "none"'
                 :stroke='filled ? "none" : "currentColor"'
@@ -300,29 +302,48 @@ function close() {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(6px);
+  background: rgba(43, 37, 69, 0.42);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
 }
 
 .repeat-card {
   width: 100%;
-  max-width: 560px;
+  max-width: 580px;
   max-height: calc(100svh - 48px);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  border-width: 3px;
 }
 
 .repeat-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border);
+  padding: 18px 24px;
+  background: linear-gradient(120deg, var(--yellow-bg), var(--pink-bg) 55%, var(--purple-bg));
+  border-bottom: 2px solid var(--border);
 }
 
 .repeat-header h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 22px;
+}
+
+.header-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #fff;
   font-size: 20px;
+  box-shadow: var(--shadow-sm);
+  animation: wiggle 3.2s ease-in-out infinite;
 }
 
 .repeat-body {
@@ -334,10 +355,15 @@ function close() {
 
 .target-section {
   text-align: center;
+  padding: 16px 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, var(--cyan-bg), var(--blue-bg));
+  border: 2px dashed rgba(63, 140, 255, 0.35);
 }
 
 .target-en {
-  font-size: 24px;
+  font-family: var(--font-display);
+  font-size: 27px;
   font-weight: 700;
   line-height: 1.4;
   margin: 0 0 8px;
@@ -358,26 +384,31 @@ function close() {
 }
 
 .word-chip-btn {
-  padding: 6px 12px;
+  padding: 9px 16px;
+  min-height: 44px;
   border-radius: var(--radius-pill);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--ink);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  transition: background var(--transition), color var(--transition), border-color var(--transition), transform var(--transition);
+  background: var(--card);
+  border: 2px solid var(--border);
+  box-shadow: var(--shadow-pop);
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition), transform var(--transition);
 }
 
 .word-chip-btn:hover {
   border-color: var(--blue);
   color: var(--blue);
+  transform: translateY(-2px);
 }
 
 .word-chip-btn.active {
-  background: var(--blue-bg);
-  color: var(--blue);
-  border-color: var(--blue);
-  transform: translateY(-1px);
+  background: var(--grad-blue);
+  color: #fff;
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-blue), var(--shadow-pop);
 }
 
 .custom-input {
@@ -387,8 +418,8 @@ function close() {
 }
 
 .custom-input label {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   color: var(--muted);
 }
 
@@ -400,12 +431,13 @@ function close() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .record-btn {
-  width: 140px;
-  height: 140px;
+  position: relative;
+  width: 156px;
+  height: 156px;
   border-radius: 50%;
   display: inline-flex;
   flex-direction: column;
@@ -413,32 +445,51 @@ function close() {
   justify-content: center;
   gap: 8px;
   color: #fff;
-  background: var(--blue);
-  box-shadow: var(--shadow-blue);
-  transition: transform var(--transition), background var(--transition), box-shadow var(--transition);
+  background: var(--grad-blue);
+  box-shadow: var(--shadow-blue), var(--shadow-pop);
+  transition: transform 180ms var(--ease-bounce), background 200ms ease, box-shadow 200ms ease;
   touch-action: none;
   user-select: none;
 }
 
+/* 呼吸光环:纯装饰,不参与无障碍文本 */
+.record-btn::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  border: 4px solid rgba(63, 140, 255, 0.4);
+  animation: ring-pulse 2.4s ease-out infinite;
+  pointer-events: none;
+}
+
 .record-btn:hover {
-  background: var(--blue-hover);
-  transform: scale(1.03);
+  transform: scale(1.04);
 }
 
 .record-btn:active {
-  transform: scale(0.98);
+  transform: translateY(2px) scale(0.97);
+  box-shadow: var(--shadow-sm);
 }
 
 .record-btn.recording {
-  background: var(--red);
-  box-shadow: 0 0 0 8px rgba(255, 59, 48, 0.15);
+  background: linear-gradient(180deg, #ff8089, var(--red));
+  box-shadow: 0 0 0 10px rgba(255, 95, 109, 0.16);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
+.record-btn.recording::after {
+  border-color: rgba(255, 95, 109, 0.5);
+}
+
 .record-btn.scoring {
-  background: var(--muted);
+  background: var(--secondary);
   box-shadow: none;
   cursor: not-allowed;
+}
+
+.record-btn.scoring::after {
+  display: none;
 }
 
 .record-btn:disabled {
@@ -446,18 +497,19 @@ function close() {
 }
 
 .record-btn svg {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
 }
 
 .record-label {
-  font-size: 14px;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .rec-dot {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: #fff;
   animation: pulse 1.2s ease-in-out infinite;
@@ -470,34 +522,46 @@ function close() {
 }
 
 .spinner {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.3);
+  border: 4px solid rgba(255, 255, 255, 0.35);
   border-top-color: #fff;
   animation: spin 0.8s linear infinite;
 }
 
 .score-result {
-  padding: 20px;
+  padding: 22px 20px;
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: linear-gradient(180deg, var(--yellow-bg), var(--orange-bg));
+  border: 2px solid rgba(255, 159, 69, 0.35);
   text-align: center;
+  animation: pop-in 480ms var(--ease-bounce) backwards;
 }
 
 .score-stars {
   display: flex;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
   margin-bottom: 10px;
   color: var(--yellow);
 }
 
+.star {
+  filter: drop-shadow(0 2px 3px rgba(255, 159, 69, 0.45));
+  animation: star-pop 460ms var(--ease-bounce) backwards;
+  animation-delay: calc(var(--i, 0) * 90ms + 120ms);
+}
+
 .score-number {
-  font-size: 32px;
+  font-family: var(--font-display);
+  font-size: 40px;
   font-weight: 700;
-  color: var(--ink);
+  line-height: 1.2;
+  color: var(--orange-ink);
   margin-bottom: 16px;
+  animation: pop-in 460ms var(--ease-bounce) backwards;
+  animation-delay: 640ms;
 }
 
 .score-pills {
@@ -509,39 +573,15 @@ function close() {
 }
 
 .word-scores {
-  display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: 6px;
-  line-height: 1.6;
 }
 
-.ws-word {
-  padding: 4px 10px;
-  border-radius: var(--radius-xs);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: help;
-}
-
-.word-good {
-  background: var(--green-bg);
-  color: var(--green);
-}
-
-.word-ok {
-  background: var(--yellow-bg);
-  color: #a67c00;
-}
-
-.word-bad {
-  background: var(--red-bg);
-  color: var(--red);
-}
-
-.modal-fade-enter-active,
-.modal-fade-leave-active {
+.modal-fade-enter-active {
   transition: opacity 250ms ease;
+}
+
+.modal-fade-leave-active {
+  transition: opacity 200ms ease;
 }
 
 .modal-fade-enter-from,
@@ -549,31 +589,32 @@ function close() {
   opacity: 0;
 }
 
-.modal-fade-enter-active .repeat-card,
+.modal-fade-enter-active .repeat-card {
+  transition: transform 340ms var(--ease-bounce);
+}
+
 .modal-fade-leave-active .repeat-card {
-  transition: transform 250ms cubic-bezier(0.32, 0.72, 0, 1);
+  transition: transform 180ms ease;
 }
 
 .modal-fade-enter-from .repeat-card,
 .modal-fade-leave-to .repeat-card {
-  transform: scale(0.96) translateY(12px);
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+  transform: scale(0.86) translateY(22px) rotate(-1.5deg);
 }
 
 @media (max-width: 640px) {
   .repeat-card {
     max-width: 100%;
-    border-radius: var(--radius-card);
   }
   .target-en {
-    font-size: 20px;
+    font-size: 22px;
   }
   .record-btn {
-    width: 120px;
-    height: 120px;
+    width: 132px;
+    height: 132px;
+  }
+  .score-number {
+    font-size: 34px;
   }
 }
 </style>

@@ -29,28 +29,31 @@ const styles = [
 .style-picker {
   display: inline-flex;
   gap: 4px;
-  padding: 4px;
+  padding: 5px;
   background: var(--bg);
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
 }
 
 .style-btn {
-  padding: 5px 12px;
+  padding: 7px 14px;
+  min-height: 38px;
   border-radius: var(--radius-pill);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--muted);
   background: transparent;
-  transition: background var(--transition), color var(--transition);
+  transition: background var(--transition), color var(--transition),
+    transform var(--transition), box-shadow var(--transition);
 }
 
 .style-btn:hover {
   color: var(--blue);
+  transform: translateY(-1px);
 }
 
 .style-btn.active {
-  background: #fff;
+  background: linear-gradient(180deg, #fff, var(--blue-bg));
   color: var(--blue);
   box-shadow: var(--shadow-sm);
 }

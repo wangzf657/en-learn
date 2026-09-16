@@ -189,7 +189,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="page local-page">
     <header class="page-header">
-      <button class="btn btn-ghost btn-sm" @click="$router.push('/')">‹ 返回日历</button>
+      <button class="btn btn-secondary" @click="$router.push('/')">‹ 返回日历</button>
       <div class="title-group">
         <h1 class="page-title">自由播放</h1>
         <p class="page-subtitle">从课程库选择课程与素材进行播放</p>
@@ -210,10 +210,7 @@ onBeforeUnmount(() => {
             @pause="playing = false"
           ></video>
           <div v-else class="video-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <rect x="2" y="7" width="20" height="10" rx="2"></rect>
-              <polygon points="10 11 10 13 14 13 14 11"></polygon>
-            </svg>
+            <span class="placeholder-emoji" aria-hidden="true">🎬</span>
             <p>选择课程和素材后开始播放</p>
           </div>
           <SubtitleOverlay
@@ -390,35 +387,38 @@ onBeforeUnmount(() => {
 
 .video-section {
   position: sticky;
-  top: 84px;
+  top: 92px;
   padding: 0;
   overflow: hidden;
 }
 
 .video-wrap {
   position: relative;
-  background: #000;
+  background: #16102b;
   aspect-ratio: 16 / 9;
   width: 100%;
-  max-height: calc(100svh - 154px);
+  max-height: calc(100svh - 176px);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .video-placeholder {
-  color: var(--secondary);
+  color: #cdc4e6;
   text-align: center;
 }
 
-.video-placeholder svg {
+.placeholder-emoji {
+  display: block;
+  font-size: 56px;
   margin-bottom: 12px;
-  opacity: 0.5;
+  animation: float-y 3.4s var(--ease-soft) infinite;
 }
 
 .video-placeholder p {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 video {
@@ -431,49 +431,54 @@ video {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 20px;
-  background: var(--bg);
+  padding: 16px 20px;
+  background: linear-gradient(180deg, var(--card), var(--bg));
 }
 
 .play-btn {
   flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background: var(--blue);
+  background: var(--grad-blue);
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-blue);
-  transition: transform var(--transition), background var(--transition);
+  box-shadow: var(--shadow-blue), var(--shadow-pop);
+  transition: transform 180ms var(--ease-bounce), background 200ms ease, box-shadow 200ms ease;
 }
 
 .play-btn:hover {
-  background: var(--blue-hover);
-  transform: scale(1.05);
+  transform: scale(1.08) rotate(-4deg);
 }
 
 .play-btn:active {
-  transform: scale(0.98);
+  transform: translateY(2px) scale(0.96);
+  box-shadow: var(--shadow-sm);
 }
 
 .icon-btn {
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
-  background: transparent;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--card);
   color: var(--muted);
+  border: 2px solid var(--border);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--transition), color var(--transition);
+  box-shadow: var(--shadow-pop);
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition), transform var(--transition);
 }
 
 .icon-btn:hover {
   background: var(--blue-bg);
   color: var(--blue);
+  border-color: var(--blue);
+  transform: translateY(-2px);
 }
 
 .time-row {
@@ -492,8 +497,8 @@ video {
 }
 
 .right-panel {
-  padding: 20px;
-  max-height: calc(100svh - 160px);
+  padding: 18px;
+  max-height: calc(100svh - 176px);
   overflow-y: auto;
 }
 
@@ -505,16 +510,21 @@ video {
 }
 
 .course-group {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--card);
-  transition: box-shadow var(--transition);
+  transition: box-shadow var(--transition), border-color var(--transition), transform var(--transition);
+}
+
+.course-group:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .course-group.active {
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+  box-shadow: 0 0 0 4px rgba(63, 140, 255, 0.16);
 }
 
 .course-header {
@@ -535,19 +545,20 @@ video {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
+  border-radius: 50%;
+  background: var(--card);
   color: var(--muted);
   cursor: pointer;
-  transition: transform var(--transition), color var(--transition);
+  box-shadow: var(--shadow-pop);
+  transition: transform 220ms var(--ease-bounce), color var(--transition), background var(--transition);
 }
 
 .toggle-btn:hover {
   color: var(--blue);
-  background: var(--card);
+  background: var(--blue-bg);
 }
 
 .toggle-btn.expanded {
@@ -557,13 +568,13 @@ video {
 .course-name {
   flex: 1 1 auto;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
   word-break: break-all;
 }
 
 .material-list {
-  border-top: 1px solid var(--border);
+  border-top: 2px solid var(--border);
 }
 
 .material-list ul {
@@ -579,28 +590,31 @@ video {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  min-height: 46px;
+  border-radius: var(--radius-xs);
   background: var(--bg);
   color: var(--ink);
   cursor: pointer;
-  transition: background var(--transition), color var(--transition);
+  transition: background var(--transition), color var(--transition), transform var(--transition);
 }
 
 .material-item:hover {
   background: var(--blue-bg);
   color: var(--blue);
+  transform: translateX(3px);
 }
 
 .material-item.active {
-  background: var(--blue);
+  background: var(--grad-blue);
   color: #fff;
+  box-shadow: var(--shadow-blue), var(--shadow-pop);
 }
 
 .material-title {
   flex: 1 1 auto;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 700;
   word-break: break-all;
 }
 

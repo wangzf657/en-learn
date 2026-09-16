@@ -26,7 +26,10 @@ watch(
 
 <template>
   <section ref="root" class="panel-section card">
-    <h2 class="panel-title">{{ title }}</h2>
+    <h2 class="panel-title">
+      <span class="title-dot" aria-hidden="true"></span>
+      {{ title }}
+    </h2>
     <div v-if="sentences.length === 0" class="empty-state" style="padding: 40px 20px">
       <p>{{ emptyText }}</p>
     </div>
@@ -60,19 +63,27 @@ watch(
 <style scoped>
 .panel-section {
   padding: 22px 24px;
-  max-height: calc(100svh - 160px);
+  max-height: calc(100svh - 176px);
   overflow-y: auto;
 }
 
 .panel-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 20px;
+  gap: 10px;
+  font-size: 22px;
   margin-bottom: 18px;
   padding-bottom: 14px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px dashed var(--border);
   color: var(--ink);
+}
+
+.title-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, var(--pink), var(--purple));
+  box-shadow: 0 4px 10px rgba(160, 107, 255, 0.45);
 }
 
 .sentence-list {
@@ -83,23 +94,30 @@ watch(
 
 .sentence-card {
   padding: 18px 20px;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border);
   background: var(--card);
   cursor: pointer;
-  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+  box-shadow: var(--shadow-pop);
+  transition: border-color var(--transition), box-shadow var(--transition),
+    transform var(--transition), background var(--transition);
 }
 
 .sentence-card:hover {
   border-color: var(--blue);
+  transform: translateY(-3px);
   box-shadow: var(--shadow-sm);
-  transform: translateY(-2px);
+}
+
+.sentence-card:active {
+  transform: translateY(0) scale(0.99);
 }
 
 .sentence-card.active {
-  background: var(--blue-bg);
+  background: linear-gradient(180deg, #fff, var(--blue-bg));
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+  box-shadow: 0 0 0 4px rgba(63, 140, 255, 0.16), var(--shadow-sm);
+  animation: pop-in 380ms var(--ease-bounce) backwards;
 }
 
 .sentence-main {
@@ -107,15 +125,16 @@ watch(
 }
 
 .en {
-  font-size: 18px;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
   line-height: 1.5;
   margin: 0 0 6px;
   color: var(--ink);
 }
 
 .zh {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--muted);
   margin: 0;
 }
@@ -132,20 +151,26 @@ watch(
   flex-direction: column;
   gap: 2px;
   padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--purple-bg);
+  border: 2px solid transparent;
   font-size: 13px;
+  transition: transform var(--transition), border-color var(--transition);
+}
+
+.word-chip:hover {
+  transform: translateY(-2px) rotate(-1deg);
+  border-color: rgba(160, 107, 255, 0.45);
 }
 
 .word-chip .w {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
 }
 
 .word-chip .phonetic {
   font-family: var(--font-mono);
-  color: var(--blue);
+  color: var(--purple);
   font-size: 12px;
 }
 

@@ -18,6 +18,7 @@ const error = ref('')
 const checkedIn = ref(false)
 const checkinLoading = ref(false)
 const toast = ref('')
+const celebrate = ref(false)
 
 const cues = ref([])
 const subtitleStyle = ref('sub-clean')
@@ -210,6 +211,8 @@ async function doCheckin() {
     await dayApi.checkin(props.date)
     checkedIn.value = true
     toast.value = '今日已打卡'
+    celebrate.value = true
+    setTimeout(() => (celebrate.value = false), 2000)
     setTimeout(() => (toast.value = ''), 2200)
   } catch (e) {
     toast.value = e.detail || e.message || '打卡失败'
@@ -293,22 +296,25 @@ onBeforeUnmount(() => {
 <template>
   <div class="page play-page">
     <header class="page-header">
-      <button class="btn btn-ghost btn-sm" @click="$router.push('/')">‹ 返回日历</button>
+      <button class="btn btn-secondary" @click="$router.push('/')">‹ 返回日历</button>
       <div class="title-group">
         <h1 class="page-title">{{ pageTitle }}</h1>
-        <span v-if="checkedIn" class="badge badge-blue">
+        <span v-if="checkedIn" class="badge badge-green">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           已打卡
         </span>
         <span v-else class="badge badge-yellow">未打卡</span>
         <button
           v-if="!checkedIn"
-          class="btn btn-primary btn-sm checkin-btn"
+          class="btn btn-primary btn-lg checkin-btn"
           :disabled="checkinLoading"
           @click="doCheckin"
         >
           <span v-if="checkinLoading">打卡中…</span>
-          <span v-else>已完成打卡</span>
+          <template v-else>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <span>已完成打卡</span>
+          </template>
         </button>
       </div>
     </header>
@@ -501,9 +507,20 @@ onBeforeUnmount(() => {
       @error="onRepeatError(repeatIndex, $event)"
     />
 
-    <transition name="fade">
+    <transition name="pop">
+      <div v-if="celebrate" class="confetti-layer" aria-hidden="true">
+        <span
+          v-for="i in 24"
+          :key="i"
+          class="confetti-piece"
+          :style="{ '--i': i }"
+        ></span>
+      </div>
+    </transition>
+
+    <transition name="pop">
       <div v-if="toast" class="toast">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
         </svg>
         {{ toast }}
@@ -538,26 +555,34 @@ onBeforeUnmount(() => {
 }
 
 .chip {
-  padding: 8px 16px;
+  padding: 10px 20px;
+  min-height: 48px;
   border-radius: var(--radius-pill);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--muted);
   background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  border: 2px solid var(--border);
+  box-shadow: var(--shadow-pop);
+  transition: transform var(--transition), background var(--transition),
+    color var(--transition), border-color var(--transition);
 }
 
 .chip:hover {
   border-color: var(--blue);
   color: var(--blue);
+  transform: translateY(-2px);
+}
+
+.chip:active {
+  transform: translateY(1px) scale(0.97);
 }
 
 .chip.active {
-  background: var(--blue);
+  background: var(--grad-blue);
   color: #fff;
-  border-color: var(--blue);
+  border-color: transparent;
+  box-shadow: var(--shadow-blue), var(--shadow-pop);
 }
 
 .play-layout {
@@ -588,16 +613,17 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-width: 0;
   position: sticky;
-  top: 84px;
+  top: 92px;
   padding: 0;
   overflow: hidden;
+  background: var(--card);
 }
 
 .subtitle-drawer {
   flex: 0 0 auto;
   width: 0;
   overflow: hidden;
-  transition: width 300ms cubic-bezier(0.32, 0.72, 0, 1), margin-left 300ms cubic-bezier(0.32, 0.72, 0, 1);
+  transition: width 300ms var(--ease-bounce), margin-left 300ms var(--ease-bounce);
 }
 
 .subtitle-drawer.open {
@@ -608,10 +634,10 @@ onBeforeUnmount(() => {
 
 .video-wrap {
   position: relative;
-  background: #000;
+  background: #16102b;
   width: 100%;
   aspect-ratio: 16 / 9;
-  max-height: calc(100svh - 168px);
+  max-height: calc(100svh - 176px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -627,32 +653,32 @@ video {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 20px;
-  background: var(--bg);
+  padding: 16px 20px;
+  background: linear-gradient(180deg, var(--card), var(--bg));
 }
 
 .play-btn {
   flex: 0 0 auto;
-  width: 48px;
-  height: 48px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
-  background: var(--blue);
+  background: var(--grad-blue);
   color: #fff;
   font-size: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-blue);
-  transition: transform var(--transition), background var(--transition);
+  box-shadow: var(--shadow-blue), var(--shadow-pop);
+  transition: transform 180ms var(--ease-bounce), background 200ms ease, box-shadow 200ms ease;
 }
 
 .play-btn:hover {
-  background: var(--blue-hover);
-  transform: scale(1.05);
+  transform: scale(1.08) rotate(-4deg);
 }
 
 .play-btn:active {
-  transform: scale(0.98);
+  transform: translateY(2px) scale(0.96);
+  box-shadow: var(--shadow-sm);
 }
 
 .progress-area {
@@ -662,32 +688,39 @@ video {
 
 .progress-track {
   position: relative;
-  height: 10px;
+  height: 14px;
   background: var(--border);
   border-radius: 999px;
   cursor: pointer;
+  box-shadow: inset 0 2px 4px rgba(43, 37, 69, 0.12);
 }
 
 .progress-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  background: var(--blue);
+  background: linear-gradient(90deg, var(--cyan), var(--blue) 60%, var(--purple));
   border-radius: 999px;
   pointer-events: none;
+  transition: width 120ms linear;
 }
 
 .progress-thumb {
   position: absolute;
   top: 50%;
-  width: 18px;
-  height: 18px;
-  margin-top: -9px;
-  margin-left: -9px;
+  width: 24px;
+  height: 24px;
+  margin-top: -12px;
+  margin-left: -12px;
   background: #fff;
-  border: 3px solid var(--blue);
+  border: 4px solid var(--blue);
   border-radius: 50%;
   pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.35);
+  box-shadow: 0 4px 10px rgba(63, 140, 255, 0.45);
+  transition: transform 160ms var(--ease-bounce);
+}
+
+.progress-track:hover .progress-thumb {
+  transform: scale(1.15);
 }
 
 .time-row {
@@ -704,20 +737,22 @@ video {
 }
 
 .rate-btn {
-  padding: 5px 12px;
+  padding: 6px 14px;
   border-radius: 999px;
   background: #fff;
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   font-family: var(--font-mono);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--blue);
-  transition: border-color var(--transition), background var(--transition);
+  box-shadow: var(--shadow-pop);
+  transition: border-color var(--transition), background var(--transition), transform var(--transition);
 }
 
 .rate-btn:hover {
   border-color: var(--blue);
   background: var(--blue-bg);
+  transform: translateY(-1px);
 }
 
 .volume-area {
@@ -730,10 +765,13 @@ video {
 }
 
 .volume-area input[type='range'] {
-  width: 80px;
+  width: 90px;
   padding: 0;
   min-height: auto;
+  border: none;
+  background: transparent;
   accent-color: var(--blue);
+  box-shadow: none;
 }
 
 .controls-extras {
@@ -750,7 +788,9 @@ video {
 }
 
 .repeat-btn {
-  min-width: 100px;
+  min-width: 126px;
+  min-height: 46px;
+  font-size: 15px;
 }
 
 .score-error {
@@ -760,8 +800,10 @@ video {
 .score-detail {
   margin-top: 14px;
   padding: 16px;
-  background: var(--bg);
+  background: linear-gradient(180deg, #fff, var(--bg));
+  border: 2px solid var(--border);
   border-radius: var(--radius-sm);
+  animation: pop-in 420ms var(--ease-bounce) backwards;
 }
 
 .score-header {
@@ -769,13 +811,14 @@ video {
   align-items: center;
   gap: 6px;
   margin-bottom: 10px;
+  font-family: var(--font-display);
   font-weight: 700;
-  color: var(--yellow);
+  color: var(--amber-ink);
 }
 
 .score-header svg {
-  color: var(--yellow);
-  filter: drop-shadow(0 1px 2px rgba(255, 204, 0, 0.35));
+  color: var(--orange);
+  filter: drop-shadow(0 2px 3px rgba(255, 159, 69, 0.5));
 }
 
 .score-pills {
@@ -785,88 +828,92 @@ video {
   margin-bottom: 14px;
 }
 
-.pill {
-  padding: 5px 12px;
-  border-radius: var(--radius-pill);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.pill-blue {
-  background: var(--blue-bg);
-  color: var(--blue);
-}
-
-.pill-green {
-  background: var(--green-bg);
-  color: var(--green);
-}
-
-.pill-orange {
-  background: var(--orange-bg);
-  color: #c46a00;
-}
-
-.word-scores {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  line-height: 1.6;
-}
-
-.ws-word {
-  padding: 4px 10px;
-  border-radius: var(--radius-xs);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: help;
-}
-
-.word-good {
-  background: var(--green-bg);
-  color: var(--green);
-}
-
-.word-ok {
-  background: var(--yellow-bg);
-  color: #a67c00;
-}
-
-.word-bad {
-  background: var(--red-bg);
-  color: var(--red);
-}
-
 .toast {
   position: fixed;
-  left: 50%;
-  bottom: 36px;
-  transform: translateX(-50%);
-  padding: 12px 24px;
+  left: 0;
+  right: 0;
+  bottom: 40px;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  padding: 14px 28px;
   border-radius: var(--radius-pill);
-  background: var(--ink);
+  background: linear-gradient(180deg, #6b5cd6, var(--ink));
   color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: var(--shadow);
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  box-shadow: var(--shadow), var(--shadow-pop);
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  z-index: 200;
 }
 
 .toast svg {
   color: var(--yellow);
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s, transform 0.3s;
+/* 打卡庆祝彩纸 */
+.confetti-layer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 300;
 }
 
-.fade-enter-from,
-.fade-leave-to {
+.confetti-piece {
+  position: absolute;
+  top: 0;
+  left: calc(var(--i) * 3.9%);
+  width: 12px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--blue);
+  animation: confetti-fall 1.6s var(--ease-soft) forwards;
+  animation-delay: calc(var(--i) * -0.09s);
+  --drift: 0px;
+  --spin: 540deg;
+}
+
+.confetti-piece:nth-child(4n + 1) {
+  background: var(--yellow);
+  border-radius: 50%;
+}
+
+.confetti-piece:nth-child(4n + 2) {
+  background: var(--pink);
+  --drift: 90px;
+  --spin: -720deg;
+}
+
+.confetti-piece:nth-child(4n + 3) {
+  background: var(--green);
+  --drift: -80px;
+  --spin: 900deg;
+  width: 14px;
+  height: 10px;
+}
+
+.confetti-piece:nth-child(4n) {
+  background: var(--purple);
+  --drift: 40px;
+}
+
+/* 弹性出现:提示条与彩纸共用 */
+.pop-enter-active {
+  transition: opacity 200ms ease, transform 320ms var(--ease-bounce);
+}
+
+.pop-leave-active {
+  transition: opacity 200ms ease, transform 180ms ease;
+}
+
+.pop-enter-from,
+.pop-leave-to {
   opacity: 0;
-  transform: translateX(-50%) translateY(12px);
+  transform: translateY(24px) scale(0.7);
 }
 
 @media (max-width: 1024px) {

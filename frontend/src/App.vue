@@ -8,12 +8,12 @@ const route = useRoute()
   <header class="app-bar">
     <div class="app-bar-inner">
       <router-link to="/" class="brand" aria-label="返回首页">
-        <span class="brand-mark">✦</span>
+        <span class="brand-mark" aria-hidden="true">✦</span>
         <span class="brand-name">EnLearn</span>
       </router-link>
       <nav class="app-nav">
         <router-link to="/local" class="nav-link" :class="{ active: route.path === '/local' }">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
           </svg>
           <span>自由播放</span>
@@ -27,8 +27,12 @@ const route = useRoute()
       </nav>
     </div>
   </header>
-  <main>
-    <RouterView />
+  <main class="app-main">
+    <RouterView v-slot="{ Component }">
+      <Transition name="page" mode="out-in">
+        <component :is="Component" />
+      </Transition>
+    </RouterView>
   </main>
 </template>
 
@@ -37,10 +41,27 @@ const route = useRoute()
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(245, 245, 247, 0.86);
-  backdrop-filter: saturate(180%) blur(16px);
-  -webkit-backdrop-filter: saturate(180%) blur(16px);
-  border-bottom: 1px solid rgba(229, 229, 234, 0.6);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+}
+
+/* 彩虹描边:纯装饰 */
+.app-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--yellow),
+    var(--pink),
+    var(--purple),
+    var(--cyan),
+    var(--green)
+  );
 }
 
 .app-bar-inner {
@@ -57,54 +78,76 @@ const route = useRoute()
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 20px;
+  font-size: 24px;
   color: var(--ink);
+  transition: transform var(--transition);
+}
+
+.brand:hover {
+  transform: rotate(-2deg) scale(1.03);
 }
 
 .brand-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: var(--blue);
+  background: linear-gradient(140deg, var(--yellow), var(--pink) 55%, var(--purple));
   color: #fff;
-  font-size: 14px;
-  box-shadow: var(--shadow-blue);
+  font-size: 18px;
+  box-shadow: var(--shadow-blue), var(--shadow-pop);
+  animation: wiggle 4s ease-in-out infinite;
+}
+
+.brand-name {
+  background: linear-gradient(180deg, var(--ink) 55%, var(--purple));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .app-nav {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .nav-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 10px 20px;
+  min-height: 46px;
   border-radius: var(--radius-pill);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--muted);
-  transition: background var(--transition), color var(--transition);
+  border: 2px solid transparent;
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition), transform var(--transition);
 }
 
-.nav-link:hover,
-.nav-link.active {
+.nav-link:hover {
   background: var(--blue-bg);
   color: var(--blue);
+  transform: translateY(-1px);
+}
+
+.nav-link.active {
+  background: var(--grad-blue);
+  color: #fff;
+  box-shadow: var(--shadow-blue), var(--shadow-pop);
 }
 
 .nav-link.icon-link {
   padding: 0;
-  width: 40px;
-  height: 40px;
+  width: 46px;
+  height: 46px;
   justify-content: center;
 }
 
@@ -112,8 +155,17 @@ const route = useRoute()
   .app-bar-inner {
     padding: 10px 16px;
   }
-  .brand-name {
-    font-size: 18px;
+  .brand {
+    font-size: 20px;
+  }
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+    font-size: 15px;
+  }
+  .nav-link {
+    padding: 8px 14px;
+    font-size: 14px;
   }
 }
 </style>

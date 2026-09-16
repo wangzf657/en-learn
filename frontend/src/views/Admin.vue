@@ -797,32 +797,34 @@ function selectCalendarDate(date) {
   display: flex;
   gap: 8px;
   margin-bottom: 24px;
-  padding: 6px;
+  padding: 7px;
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-pill);
   box-shadow: var(--shadow-sm);
 }
 
 .tab-btn {
   flex: 1;
   padding: 10px 18px;
-  border-radius: var(--radius-sm);
+  min-height: 46px;
+  border-radius: var(--radius-pill);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--muted);
-  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
+  transition: background var(--transition), color var(--transition),
+    transform var(--transition), box-shadow var(--transition);
 }
 
 .tab-btn:hover {
-  color: var(--ink);
-  background: var(--bg);
+  color: var(--blue);
+  background: var(--blue-bg);
 }
 
 .tab-btn.active {
-  color: var(--blue);
-  background: var(--blue-bg);
-  box-shadow: var(--shadow-sm);
+  color: #fff;
+  background: var(--grad-blue);
+  box-shadow: var(--shadow-blue), var(--shadow-pop);
 }
 
 .settings-card,
@@ -846,17 +848,17 @@ function selectCalendarDate(date) {
 .settings-card h2 svg,
 .course-card h2 svg,
 .checkin-card h2 svg {
-  color: var(--blue);
+  color: var(--purple);
 }
 
 .scoring-section {
   margin-top: 28px;
   padding-top: 24px;
-  border-top: 1px solid var(--border);
+  border-top: 2px dashed var(--border);
 }
 
 .scoring-section h3 {
-  font-size: 16px;
+  font-size: 17px;
   margin-bottom: 16px;
   color: var(--ink);
 }
@@ -911,7 +913,7 @@ function selectCalendarDate(date) {
 .schedule-result {
   margin-top: 20px;
   padding-top: 20px;
-  border-top: 1px solid var(--border);
+  border-top: 2px dashed var(--border);
 }
 
 .result-section h3 {
@@ -971,7 +973,7 @@ function selectCalendarDate(date) {
 
 .import-result .tag.updated {
   background: var(--orange-bg);
-  color: #c46a00;
+  color: var(--orange-ink);
 }
 
 .schedule-result .schedule-day {
@@ -1032,7 +1034,7 @@ function selectCalendarDate(date) {
 }
 
 .course-header:hover {
-  background: rgba(0, 122, 255, 0.04);
+  background: var(--blue-bg);
 }
 
 .course-main {
@@ -1067,7 +1069,8 @@ function selectCalendarDate(date) {
 
 .material-panel {
   min-height: 320px;
-  background: var(--bg);
+  background: linear-gradient(180deg, var(--bg), var(--card));
+  border: 2px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 16px;
 }
@@ -1165,14 +1168,15 @@ function selectCalendarDate(date) {
   padding: 8px;
   background: var(--bg);
   border: 2px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   transition: background var(--transition), box-shadow var(--transition), transform var(--transition), border-color var(--transition);
 }
 
 .calendar-cell:hover:not(.empty) {
   background: var(--blue-bg);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-pop);
 }
 
 .calendar-cell.empty {
@@ -1186,7 +1190,7 @@ function selectCalendarDate(date) {
 }
 
 .calendar-cell.has-materials {
-  background: var(--green-bg);
+  background: linear-gradient(180deg, var(--green-bg), #cdf4de);
   border-color: var(--green);
 }
 
@@ -1411,6 +1415,7 @@ function selectCalendarDate(date) {
 
   .admin-tabs {
     flex-wrap: wrap;
+    border-radius: var(--radius-card);
   }
 
   .tab-btn {
