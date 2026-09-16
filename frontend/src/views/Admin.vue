@@ -44,6 +44,9 @@ const scoringProviders = ref([])
 const scoringProvider = ref('mock')
 const scoringOptions = ref({})
 
+// 与后端 echoic/providers/unisound.py 的兜底值保持一致
+const SCORING_DEFAULTS = { mode: 'E', base_url: 'http://edu.hivoice.cn/eval' }
+
 const activeTab = ref('settings')
 const tabs = [
   { key: 'settings', label: '通用设置' },
@@ -65,7 +68,10 @@ onMounted(async () => {
 watch(scoringProvider, (next) => {
   if (next === 'mock') {
     scoringOptions.value = {}
+    return
   }
+  // 已填过的不动,缺的补默认值(切服务时让生效值直接可见)
+  scoringOptions.value = { ...SCORING_DEFAULTS, ...scoringOptions.value }
 })
 
 watch(scheduleMonth, () => {
@@ -127,7 +133,7 @@ async function loadScoring() {
     const data = await scoringApi.getScoring()
     scoringProviders.value = data.providers || []
     scoringProvider.value = data.provider || 'mock'
-    scoringOptions.value = data.options || {}
+    scoringOptions.value = { ...SCORING_DEFAULTS, ...(data.options || {}) }
   } catch (e) {
     scoringError.value = e.detail || e.message
   } finally {
@@ -385,6 +391,20 @@ async function clearDay(date) {
   }
 }
 
+async function clearMonth() {
+  if (!confirm(`确定清空 ${scheduleMonth.value} 整月的打卡排期吗？`)) return
+  scheduleLoading.value = true
+  try {
+    await adminApi.clearMonth(scheduleMonth.value)
+    await loadScheduleDays()
+    await loadCourses()
+  } catch (e) {
+    alert(e.detail || e.message)
+  } finally {
+    scheduleLoading.value = false
+  }
+}
+
 async function removeDayMaterial(date, material) {
   if (!confirm(`确定从 ${date} 移除《${material.title}》吗？`)) return
   scheduleLoading.value = true
@@ -480,11 +500,11 @@ function selectCalendarDate(date) {
             </label>
             <label>
               <span>模式</span>
-              <input type="text" v-model="scoringOptions.mode" placeholder="默认 E" />
+              <input type="text" v-model="scoringOptions.mode" />
             </label>
             <label>
               <span>服务地址</span>
-              <input type="text" v-model="scoringOptions.base_url" placeholder="默认官方地址" />
+              <input type="text" v-model="scoringOptions.base_url" />
             </label>
           </template>
           <div class="full form-actions">
@@ -505,11 +525,11 @@ function selectCalendarDate(date) {
       </h2>
 
       <div class="form-grid import-form">
-        <label class="full">
+        <label>
           <span>文件夹路径</span>
           <input type="text" v-model="importFolder" placeholder="前缀下的课程文件夹，如 wowEnglish\S01" />
         </label>
-        <div class="full form-actions">
+        <div class="form-actions">
           <button class="btn btn-primary" :disabled="importLoading" @click="submitImport">
             <span v-if="importLoading">导入中…</span>
             <span v-else>导入课程</span>
@@ -684,10 +704,13 @@ function selectCalendarDate(date) {
       </div>
 
       <div class="calendar-section">
-        <label class="month-picker">
-          <span>月份</span>
-          <input type="month" v-model="scheduleMonth" />
-        </label>
+        <div class="month-row">
+          <label class="month-picker">
+            <span>月份</span>
+            <input type="month" v-model="scheduleMonth" />
+          </label>
+          <button class="btn btn-ghost btn-sm" @click="clearMonth">清空当月</button>
+        </div>
 
         <div v-if="scheduleDaysLoading" class="empty-state">
           <p>正在更新打卡…</p>
@@ -899,6 +922,11 @@ function selectCalendarDate(date) {
   font-weight: 600;
 }
 
+.import-form {
+  grid-template-columns: 1fr auto;
+  align-items: end;
+}
+
 .import-form,
 .schedule-form {
   margin-bottom: 20px;
@@ -1007,7 +1035,31 @@ function selectCalendarDate(date) {
   gap: 10px;
   max-height: 640px;
   overflow-y: auto;
-  padding: 4px;
+  padding: 4px 10px 4px 4px;
+  /* 滚到底不再带动整页一起滚 */
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* 滚动条:细、圆角胶囊、配色贴主题(Chrome/Edge/Safari) */
+.course-list-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.course-list-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.course-list-panel::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+}
+
+.course-list-panel::-webkit-scrollbar-thumb:hover {
+  background-color: var(--blue);
 }
 
 .course-item {
@@ -1132,11 +1184,17 @@ function selectCalendarDate(date) {
   border-top: 1px solid var(--border);
 }
 
+.month-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
 .month-picker {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 20px;
 }
 
 .month-picker input {

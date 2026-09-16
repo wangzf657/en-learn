@@ -8,23 +8,23 @@ const props = defineProps({
   sentence: { type: Object, default: () => ({}) },
 })
 
-const emit = defineEmits(['close', 'result', 'error'])
+const emit = defineEmits(['close'])
 
-const selectedWord = ref(null)
 const customText = ref('')
 const status = ref('idle')
 const result = ref(null)
 const error = ref('')
 const recordingController = ref(null)
-const wantRecording = ref(false)
+const recordedUrl = ref('')
+const audioEl = ref(null)
+const playingRecording = ref(false)
 let alive = true
 
-const reference = computed(() => {
-  const c = customText.value.trim()
-  if (c) return c
-  if (selectedWord.value) return selectedWord.value
-  return props.sentence?.en || ''
-})
+const defaultText = computed(() => props.sentence?.en || '')
+const reference = computed(() => customText.value.trim() || defaultText.value)
+
+// 正在朗读的条目:'sentence' | 'words' | null
+const speakingKey = ref(null)
 
 const overallScore = computed(() => {
   if (!result.value) return 0
@@ -43,32 +43,103 @@ function wordScoreClass(score) {
   return 'word-bad'
 }
 
-function selectWord(w) {
-  if (selectedWord.value === w) {
-    selectedWord.value = null
-  } else {
-    selectedWord.value = w
-    customText.value = ''
+function restoreSentence() {
+  customText.value = defaultText.value
+}
+
+/* ---------------- 朗读(TTS) ---------------- */
+
+function stopSpeaking() {
+  if (!('speechSynthesis' in window)) return
+  window.speechSynthesis.cancel()
+  speakingKey.value = null
+}
+
+function makeUtterance(text, onDone) {
+  const utter = new SpeechSynthesisUtterance(text)
+  utter.lang = 'en-US'
+  utter.rate = 0.9
+  utter.onend = onDone
+  utter.onerror = onDone
+  return utter
+}
+
+function toggleSpeakSentence() {
+  const key = 'sentence'
+  if (speakingKey.value === key) return stopSpeaking()
+  if (!('speechSynthesis' in window) || !defaultText.value) return
+  const synth = window.speechSynthesis
+  synth.cancel()
+  speakingKey.value = key
+  synth.speak(makeUtterance(defaultText.value, () => {
+    if (speakingKey.value === key) speakingKey.value = null
+  }))
+}
+
+// 点词块即播放该词(单条),再点一次停止
+function toggleSpeakWord(w, idx) {
+  const key = `w-${idx}`
+  if (speakingKey.value === key) return stopSpeaking()
+  if (!('speechSynthesis' in window) || !w) return
+  const synth = window.speechSynthesis
+  synth.cancel()
+  speakingKey.value = key
+  synth.speak(makeUtterance(w, () => {
+    if (speakingKey.value === key) speakingKey.value = null
+  }))
+}
+
+/* ---------------- 录音回放(阅后即焚) ---------------- */
+
+function stopPlayback() {
+  const a = audioEl.value
+  if (a) {
+    a.pause?.()
+    a.currentTime = 0
+  }
+  playingRecording.value = false
+}
+
+function releaseRecording() {
+  stopPlayback()
+  if (recordedUrl.value) {
+    URL.revokeObjectURL?.(recordedUrl.value)
+    recordedUrl.value = ''
   }
 }
 
+function togglePlayback() {
+  const a = audioEl.value
+  if (!a) return
+  if (playingRecording.value) {
+    a.pause?.()
+    playingRecording.value = false
+    return
+  }
+  a.currentTime = 0
+  playingRecording.value = true
+  a.play?.()?.catch?.(() => {
+    playingRecording.value = false
+  })
+}
+
 function reset() {
-  selectedWord.value = null
-  customText.value = ''
+  releaseRecording()
+  customText.value = defaultText.value
   status.value = 'idle'
   result.value = null
   error.value = ''
-  wantRecording.value = false
   recordingController.value = null
 }
 
 function cleanup() {
-  wantRecording.value = false
   const controller = recordingController.value
   if (controller) {
     recordingController.value = null
     controller.stop().catch(() => {})
   }
+  releaseRecording()
+  stopSpeaking()
 }
 
 watch(
@@ -77,6 +148,7 @@ watch(
     if (open) reset()
     else cleanup()
   },
+  { immediate: true },
 )
 
 function isInput(el) {
@@ -89,93 +161,76 @@ function onKeyDown(e) {
   if (!props.open) return
   if (e.key === ' ' && !e.repeat && !isInput(e.target)) {
     e.preventDefault()
-    startRecordingFlow()
-  }
-}
-
-function onKeyUp(e) {
-  if (!props.open) return
-  if (e.key === ' ' && !isInput(e.target)) {
-    e.preventDefault()
-    stopRecordingFlow()
+    toggleRecording()
   }
 }
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
-  window.addEventListener('keyup', onKeyUp)
 })
 
 onBeforeUnmount(() => {
   alive = false
   window.removeEventListener('keydown', onKeyDown)
-  window.removeEventListener('keyup', onKeyUp)
   cleanup()
 })
 
+// 切换式录音:空闲→开始,录音中→停止评分,'starting' 时再点即取消启动
+function toggleRecording() {
+  if (status.value === 'scoring') return
+  if (status.value === 'starting') {
+    status.value = 'idle'
+    return
+  }
+  if (status.value === 'recording') return stopRecordingFlow()
+  startRecordingFlow()
+}
+
 async function startRecordingFlow() {
   if (status.value === 'recording' || status.value === 'starting' || status.value === 'scoring') return
-  wantRecording.value = true
   status.value = 'starting'
   error.value = ''
   result.value = null
   try {
     const controller = await startRecording()
-    if (!alive) {
+    // 启动期间被取消(状态已不是 starting)或组件已卸载,丢弃这次录音
+    if (!alive || status.value !== 'starting') {
       try { await controller.stop() } catch {}
       return
     }
     recordingController.value = controller
-    if (!wantRecording.value) {
-      status.value = 'idle'
-      recordingController.value = null
-      try { await controller.stop() } catch {}
-      return
-    }
     status.value = 'recording'
   } catch (e) {
-    if (!alive) return
+    if (!alive || status.value !== 'starting') return
     recordingController.value = null
     status.value = 'error'
     error.value = e.message
-    emit('error', e.message)
-    wantRecording.value = false
   }
 }
 
 async function stopRecordingFlow() {
-  wantRecording.value = false
   const controller = recordingController.value
   if (!controller) {
-    if (status.value === 'starting') status.value = 'idle'
+    status.value = 'idle'
     return
   }
   status.value = 'scoring'
   try {
     const blob = await controller.stop()
     recordingController.value = null
+    // 存下这条录音供试听;覆盖前先释放上一条
+    releaseRecording()
+    recordedUrl.value = URL.createObjectURL?.(blob) || ''
     const res = await scoringApi.score(blob, reference.value)
     if (!alive) return
     result.value = res
     status.value = 'result'
-    emit('result', res)
   } catch (e) {
     if (!alive) return
     recordingController.value = null
     status.value = 'error'
     error.value = e.detail || e.message
-    emit('error', e.detail || e.message)
   }
-}
-
-function onPointerDown(e) {
-  e.preventDefault()
-  startRecordingFlow()
-}
-
-function onPointerUp(e) {
-  e.preventDefault()
-  stopRecordingFlow()
 }
 
 function close() {
@@ -201,6 +256,25 @@ function close() {
           <div class='target-section'>
             <p class='target-en'>{{ reference }}</p>
             <p v-if='sentence.zh' class='target-zh'>{{ sentence.zh }}</p>
+            <div class='target-actions'>
+              <button
+                type='button'
+                class='speak-pill'
+                :class='{ speaking: speakingKey === "sentence" }'
+                :title='speakingKey === "sentence" ? "停止朗读" : "朗读完整台词"'
+                @click.stop='toggleSpeakSentence'
+              >
+                <svg v-if='speakingKey !== "sentence"' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
+                  <polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5'></polygon>
+                  <path d='M15.54 8.46a5 5 0 0 1 0 7.07'></path>
+                  <path d='M19.07 4.93a10 10 0 0 1 0 14.14'></path>
+                </svg>
+                <svg v-else width='14' height='14' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'>
+                  <rect x='7' y='7' width='10' height='10' rx='2'></rect>
+                </svg>
+                <span>{{ speakingKey === 'sentence' ? '停止' : '朗读台词' }}</span>
+              </button>
+            </div>
           </div>
 
           <div v-if='sentence.words?.length' class='word-chips'>
@@ -209,20 +283,37 @@ function close() {
               :key='idx'
               type='button'
               class='chip word-chip-btn'
-              :class='{ active: selectedWord === w.w }'
-              @click='selectWord(w.w)'
+              :class='{ speaking: speakingKey === `w-${idx}` }'
+              :title='`点击播放 ${w.w}`'
+              @click='toggleSpeakWord(w.w, idx)'
             >
-              {{ w.w }}
+              <span class='wc-w'>
+                {{ w.w }}
+                <svg class='speak-hint' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>
+                  <polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5'></polygon>
+                  <path d='M15.54 8.46a5 5 0 0 1 0 7.07'></path>
+                </svg>
+              </span>
+              <span v-if='w.phonetic' class='wc-phonetic'>/{{ w.phonetic }}/</span>
+              <span v-if='w.note' class='wc-note'>{{ w.note }}</span>
             </button>
           </div>
 
           <div class='custom-input'>
-            <label for='repeat-custom'>自定义跟读文本</label>
+            <div class='custom-head'>
+              <label for='repeat-custom'>跟读文本</label>
+              <button
+                v-if='customText.trim() !== defaultText.trim()'
+                type='button'
+                class='restore-btn'
+                @click='restoreSentence'
+              >恢复台词</button>
+            </div>
             <input
               id='repeat-custom'
               v-model.trim='customText'
               type='text'
-              placeholder='输入想跟读的内容，会覆盖默认台词'
+              placeholder='输入想跟读的内容'
               @keydown.space.stop
             />
           </div>
@@ -233,10 +324,7 @@ function close() {
               type='button'
               :class='{ recording: status === "recording", scoring: status === "scoring" }'
               :disabled='status === "scoring"'
-              @pointerdown='onPointerDown'
-              @pointerup='onPointerUp'
-              @pointercancel='onPointerUp'
-              @pointerleave='onPointerUp'
+              @click='toggleRecording'
             >
               <span v-if='status === "scoring"' class='spinner'></span>
               <span v-else-if='status === "recording"' class='rec-dot'></span>
@@ -245,10 +333,10 @@ function close() {
                 <path d='M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z'/>
               </svg>
               <span class='record-label'>
-                {{ status === 'recording' ? '松开停止' : status === 'scoring' ? '评分中…' : '按住录音' }}
+                {{ status === 'recording' ? '点击停止' : status === 'scoring' ? '评分中…' : status === 'starting' ? '准备中…' : '点击录音' }}
               </span>
             </button>
-            <p class='record-hint'>按住空格或按住按钮录音</p>
+            <p class='record-hint'>按空格或点击按钮开始，再按一次结束</p>
           </div>
 
           <div v-if='status === "error"' class='error-detail'>{{ error }}</div>
@@ -285,6 +373,35 @@ function close() {
               >
                 {{ ws.word }}
               </span>
+            </div>
+
+            <div v-if='recordedUrl' class='playback'>
+              <button
+                type='button'
+                class='playback-btn'
+                :class='{ playing: playingRecording }'
+                :title='playingRecording ? "停止回放" : "听我刚才录的音"'
+                @click='togglePlayback'
+              >
+                <svg v-if='playingRecording' width='16' height='16' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'>
+                  <rect x='6' y='5' width='4' height='14' rx='1'></rect>
+                  <rect x='14' y='5' width='4' height='14' rx='1'></rect>
+                </svg>
+                <svg v-else width='16' height='16' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'>
+                  <path d='M8 5v14l11-7z'></path>
+                </svg>
+                <span>{{ playingRecording ? '停止回放' : '播放我的录音' }}</span>
+              </button>
+              <audio
+                ref='audioEl'
+                class='playback-audio'
+                :src='recordedUrl'
+                preload='metadata'
+                @play='playingRecording = true'
+                @pause='playingRecording = false'
+                @ended='playingRecording = false'
+                @error='playingRecording = false'
+              ></audio>
             </div>
           </div>
         </div>
@@ -376,45 +493,154 @@ function close() {
   margin: 0;
 }
 
-.word-chips {
+.target-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
+  margin-top: 14px;
+}
+
+.speak-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--blue);
+  background: rgba(255, 255, 255, 0.85);
+  border: 2px solid rgba(63, 140, 255, 0.35);
+  box-shadow: var(--shadow-pop);
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition), transform var(--transition), box-shadow var(--transition);
+}
+
+.speak-pill:hover {
+  background: #fff;
+  border-color: var(--blue);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.speak-pill:active {
+  transform: translateY(1px) scale(0.96);
+}
+
+.speak-pill.speaking {
+  color: #fff;
+  background: var(--grad-blue);
+  border-color: transparent;
+  animation: speak-ring 1.1s ease-in-out infinite;
+}
+
+@keyframes speak-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(63, 140, 255, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(63, 140, 255, 0);
+  }
+}
+
+.word-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
 }
 
 .word-chip-btn {
-  padding: 9px 16px;
-  min-height: 44px;
-  border-radius: var(--radius-pill);
-  font-size: 15px;
-  font-weight: 700;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 100%;
+  padding: 12px 16px;
+  border-radius: var(--radius-xs);
+  text-align: left;
   color: var(--ink);
-  background: var(--card);
-  border: 2px solid var(--border);
+  background: var(--purple-bg);
+  border: 2px solid transparent;
   box-shadow: var(--shadow-pop);
   transition: background var(--transition), color var(--transition),
-    border-color var(--transition), transform var(--transition);
+    border-color var(--transition), transform var(--transition), box-shadow var(--transition);
 }
 
 .word-chip-btn:hover {
-  border-color: var(--blue);
-  color: var(--blue);
-  transform: translateY(-2px);
+  border-color: rgba(160, 107, 255, 0.45);
+  transform: translateY(-2px) rotate(-1deg);
+  box-shadow: var(--shadow-sm);
 }
 
-.word-chip-btn.active {
-  background: var(--grad-blue);
-  color: #fff;
-  border-color: transparent;
+.word-chip-btn.speaking {
+  background: #fff;
+  border-color: var(--purple);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-blue), var(--shadow-pop);
+  box-shadow: 0 0 0 4px rgba(160, 107, 255, 0.18), var(--shadow-sm);
+}
+
+.wc-w {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.speak-hint {
+  flex: none;
+  color: var(--purple);
+  opacity: 0;
+  transform: translateX(-3px);
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.word-chip-btn:hover .speak-hint,
+.word-chip-btn.speaking .speak-hint {
+  opacity: 0.8;
+  transform: none;
+}
+
+.wc-phonetic {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--purple);
+}
+
+.wc-note {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
 }
 
 .custom-input {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.custom-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.restore-btn {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--blue);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  transition: background var(--transition), color var(--transition);
+}
+
+.restore-btn:hover {
+  background: var(--blue-bg);
 }
 
 .custom-input label {
@@ -448,8 +674,6 @@ function close() {
   background: var(--grad-blue);
   box-shadow: var(--shadow-blue), var(--shadow-pop);
   transition: transform 180ms var(--ease-bounce), background 200ms ease, box-shadow 200ms ease;
-  touch-action: none;
-  user-select: none;
 }
 
 /* 呼吸光环:纯装饰,不参与无障碍文本 */
@@ -574,6 +798,56 @@ function close() {
 
 .word-scores {
   justify-content: center;
+}
+
+/* 录音回放:藏在结果卡里的自定义播放按钮,audio 只当引擎 */
+.playback {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.playback-audio {
+  display: none;
+}
+
+.playback-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 20px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(180deg, #b98bff, var(--purple));
+  box-shadow: 0 14px 26px -12px rgba(160, 107, 255, 0.6), var(--shadow-pop);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.playback-btn:hover {
+  transform: translateY(-2px);
+}
+
+.playback-btn:active {
+  transform: translateY(1px) scale(0.97);
+}
+
+.playback-btn.playing {
+  background: linear-gradient(180deg, #a273ff, #8a4dff);
+  animation: playback-wave 1.4s ease-in-out infinite;
+}
+
+@keyframes playback-wave {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(160, 107, 255, 0.45), var(--shadow-pop);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(160, 107, 255, 0), var(--shadow-pop);
+  }
 }
 
 .modal-fade-enter-active {

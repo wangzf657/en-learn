@@ -87,6 +87,9 @@ export const adminApi = {
   getSchedule(month) {
     return request(`/admin/schedule?month=${encodeURIComponent(month)}`)
   },
+  clearMonth(month) {
+    return request(`/admin/schedule?month=${encodeURIComponent(month)}`, { method: 'DELETE' })
+  },
   addDayMaterials(date, materialIds) {
     return request(`/admin/day/${date}/materials`, {
       method: 'POST',

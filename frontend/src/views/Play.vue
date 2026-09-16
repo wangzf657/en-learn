@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, reactive, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { dayApi } from '../api.js'
 import { parseSrt } from '../utils/srt.js'
@@ -50,26 +50,12 @@ const cues = computed(() =>
 const segmentStopAt = ref(null)
 let segmentRaf = 0
 
-const scoreMap = ref(new Map())
-
 const subtitleOpen = ref(true)
 const isFullscreen = ref(false)
 const layoutRef = ref(null)
 
 const repeatOpen = ref(false)
 const repeatSentence = ref(null)
-const repeatIndex = ref(-1)
-
-watch(
-  sentences,
-  (list) => {
-    scoreMap.value = new Map()
-    list.forEach((_, i) => {
-      scoreMap.value.set(i, reactive({ status: 'idle', result: null, error: '' }))
-    })
-  },
-  { immediate: true },
-)
 
 watch(currentMaterialIndex, () => {
   clearSegment()
@@ -88,19 +74,8 @@ watch(playing, (isPlaying) => {
   if (isPlaying) startSegmentLoop()
 })
 
-function scoreState(i) {
-  return scoreMap.value.get(i) || { status: 'idle', result: null, error: '' }
-}
-
-function wordScoreClass(score) {
-  if (score >= 80) return 'word-good'
-  if (score >= 60) return 'word-ok'
-  return 'word-bad'
-}
-
-function openRepeat(s, i) {
+function openRepeat(s) {
   repeatSentence.value = s
-  repeatIndex.value = i
   repeatOpen.value = true
   clearSegment()
   videoEl.value?.pause()
@@ -108,17 +83,6 @@ function openRepeat(s, i) {
 
 function closeRepeat() {
   repeatOpen.value = false
-}
-
-function onRepeatResult(i, result) {
-  const state = scoreState(i)
-  state.result = result
-  state.error = ''
-}
-
-function onRepeatError(i, message) {
-  const state = scoreState(i)
-  state.error = message
 }
 
 function toggleSubtitle() {
@@ -507,48 +471,18 @@ onBeforeUnmount(() => {
           empty-text="暂无字幕数据"
           @seek="seekToSentence"
         >
-          <template #actions="{ s, i }">
+          <template #actions="{ s }">
             <div class="repeat-row">
               <button
-                class="btn btn-sm repeat-btn"
-                :class="scoreState(i).result ? 'btn-secondary' : 'btn-primary'"
-                @click.stop="openRepeat(s, i)"
+                class="btn btn-sm repeat-btn btn-primary"
+                @click.stop="openRepeat(s)"
               >
-                <svg v-if="scoreState(i).result" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                </svg>
-                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
                   <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                 </svg>
-                <span>{{ scoreState(i).result ? '重新跟读' : '跟读一下' }}</span>
+                <span>跟读一下</span>
               </button>
-            </div>
-
-            <div v-if="scoreState(i).error" class="error-detail score-error">{{ scoreState(i).error }}</div>
-
-            <div v-if="scoreState(i).result" class="score-detail">
-              <div class="score-header">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                </svg>
-                <span>本次得分</span>
-              </div>
-              <div class="score-pills">
-                <span class="pill pill-blue">准确度 {{ Math.round(scoreState(i).result.accuracy_score) }}</span>
-                <span class="pill pill-green">流利度 {{ Math.round(scoreState(i).result.fluency_score) }}</span>
-                <span class="pill pill-orange">完整度 {{ Math.round(scoreState(i).result.completeness_score) }}</span>
-              </div>
-              <div class="word-scores">
-                <span
-                  v-for="(ws, k) in scoreState(i).result.word_scores"
-                  :key="k"
-                  :class="['ws-word', wordScoreClass(ws.accuracy_score)]"
-                  :title="`分数: ${Math.round(ws.accuracy_score)}\n预期音素: ${ws.expected_phonemes || '-'}\n实际音素: ${ws.actual_phonemes || '-'}`"
-                >
-                  {{ ws.word }}
-                </span>
-              </div>
             </div>
           </template>
         </SubtitlePanel>
@@ -559,8 +493,6 @@ onBeforeUnmount(() => {
       :open="repeatOpen"
       :sentence="repeatSentence"
       @close="closeRepeat"
-      @result="onRepeatResult(repeatIndex, $event)"
-      @error="onRepeatError(repeatIndex, $event)"
     />
 
     <transition name="pop">
@@ -847,41 +779,6 @@ video {
   min-width: 126px;
   min-height: 46px;
   font-size: 15px;
-}
-
-.score-error {
-  margin-top: 12px;
-}
-
-.score-detail {
-  margin-top: 14px;
-  padding: 16px;
-  background: linear-gradient(180deg, #fff, var(--bg));
-  border: 2px solid var(--border);
-  border-radius: var(--radius-sm);
-  animation: pop-in 420ms var(--ease-bounce) backwards;
-}
-
-.score-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  font-family: var(--font-display);
-  font-weight: 700;
-  color: var(--amber-ink);
-}
-
-.score-header svg {
-  color: var(--orange);
-  filter: drop-shadow(0 2px 3px rgba(255, 159, 69, 0.5));
-}
-
-.score-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 14px;
 }
 
 .toast {

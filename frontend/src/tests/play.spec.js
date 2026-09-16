@@ -64,9 +64,15 @@ I'm doing great.`
 
 describe('Play.vue core interactions', () => {
   let fetchCalls = []
+  let origCreateObjectURL
+  let origRevokeObjectURL
 
   beforeEach(() => {
     fetchCalls = []
+    origCreateObjectURL = URL.createObjectURL
+    origRevokeObjectURL = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:mock')
+    URL.revokeObjectURL = vi.fn()
     startRecording.mockResolvedValue({
       stop: vi.fn().mockResolvedValue(new Blob(['fake wav'], { type: 'audio/wav' })),
     })
@@ -85,7 +91,11 @@ describe('Play.vue core interactions', () => {
     })
   })
 
-  afterEach(() => restoreFetch())
+  afterEach(() => {
+    URL.createObjectURL = origCreateObjectURL
+    URL.revokeObjectURL = origRevokeObjectURL
+    restoreFetch()
+  })
 
   it('renders sentences and highlights current sentence by video time', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
@@ -153,7 +163,7 @@ describe('Play.vue core interactions', () => {
     expect(pauseSpy).not.toHaveBeenCalled()
   })
 
-  it('records repeat in modal and renders score result with colored words', async () => {
+  it('records repeat in modal: score stays inside the modal, card keeps 跟读一下', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
 
     const firstCard = wrapper.findAll('.sentence-card')[0]
@@ -164,24 +174,37 @@ describe('Play.vue core interactions', () => {
     expect(wrapper.find('.repeat-modal').exists()).toBe(true)
 
     const recordBtn = wrapper.find('.record-btn')
-    expect(recordBtn.text()).toBe('按住录音')
+    expect(recordBtn.text()).toBe('点击录音')
 
-    await recordBtn.trigger('pointerdown')
+    await recordBtn.trigger('click')
     await flushPromises()
     expect(startRecording).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('.record-btn').text()).toBe('松开停止')
+    expect(wrapper.find('.record-btn').text()).toBe('点击停止')
 
-    await recordBtn.trigger('pointerup')
+    await wrapper.find('.record-btn').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.score-number').exists()).toBe(true)
-    expect(wrapper.find('.score-stars').exists()).toBe(true)
-    expect(firstCard.text()).toContain('准确度 83')
-    expect(firstCard.text()).toContain('流利度 78')
-    expect(firstCard.text()).toContain('完整度 90')
-    expect(firstCard.findAll('.ws-word').length).toBeGreaterThan(0)
-    expect(firstCard.findAll('.word-good').length).toBeGreaterThan(0)
-    expect(firstCard.find('.repeat-btn').text()).toBe('重新跟读')
+    // 得分只活在弹窗里,外层卡片不再展示
+    const modal = wrapper.find('.repeat-modal')
+    expect(modal.find('.score-number').exists()).toBe(true)
+    expect(modal.find('.score-stars').exists()).toBe(true)
+    expect(modal.text()).toContain('准确度 83')
+    expect(modal.text()).toContain('流利度 78')
+    expect(modal.text()).toContain('完整度 90')
+    expect(modal.findAll('.ws-word').length).toBeGreaterThan(0)
+    expect(modal.findAll('.word-good').length).toBeGreaterThan(0)
+    expect(modal.find('audio').attributes('src')).toBe('blob:mock')
+    expect(modal.find('.playback-btn').exists()).toBe(true)
+
+    expect(firstCard.text()).not.toContain('准确度')
+    expect(firstCard.text()).not.toContain('本次得分')
+    expect(firstCard.find('.repeat-btn').text()).toBe('跟读一下')
+
+    // 关掉弹窗:得分随之消失,数据不出弹窗
+    await wrapper.find('.repeat-modal .icon-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.repeat-modal').exists()).toBe(false)
+    expect(firstCard.text()).not.toContain('准确度')
   })
 
   it('shows repeat error in modal without blocking the page', async () => {
@@ -193,7 +216,7 @@ describe('Play.vue core interactions', () => {
     await firstCard.find('.repeat-btn').trigger('click')
 
     const recordBtn = wrapper.find('.record-btn')
-    await recordBtn.trigger('pointerdown')
+    await recordBtn.trigger('click')
     await flushPromises()
 
     expect(wrapper.find('.repeat-modal').text()).toContain('麦克风权限被拒绝')

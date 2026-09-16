@@ -598,6 +598,18 @@ def admin_schedule_get(month: str):
     return {"days": days}
 
 
+@app.delete("/api/admin/schedule")
+def admin_schedule_clear(month: str):
+    if not re.fullmatch(r"\d{4}-\d{2}", month or ""):
+        raise HTTPException(422, "month 格式应为 YYYY-MM")
+    with closing(db()) as conn, conn:
+        removed = conn.execute(
+            "DELETE FROM day_materials WHERE date LIKE ?", (month + "-%",)
+        ).rowcount
+        conn.execute("DELETE FROM checkins WHERE date LIKE ?", (month + "-%",))
+    return {"ok": True, "removed": removed}
+
+
 @app.post("/api/admin/day/{date}/materials")
 def admin_day_assign(date: str, body: MaterialIdsIn):
     if not valid_date(date):

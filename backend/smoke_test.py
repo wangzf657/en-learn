@@ -452,6 +452,20 @@ def main():
         s, b, _ = req("DELETE", f"/api/admin/day/2026-09-02/materials/{m_delta}")
         check("移除单素材清空天", s == 200, b[:60])
 
+        # --- 清空当月 ---
+        s, b, _ = req("POST", "/api/admin/schedule",
+                      {"courseId": cb_id, "dateFrom": "2026-11-01", "dateTo": "2026-11-03"})
+        check("清空当月前置排课", s == 200 and json.loads(b)["added"] == 3, b[:100])
+        req("POST", "/api/day/2026-11-01/checkin")
+        check("清空当月前打卡存在", checkin_exists("2026-11-01"))
+        s, b, _ = req("DELETE", "/api/admin/schedule?month=2026-11")
+        check("清空当月 removed 计数", s == 200 and json.loads(b) == {"ok": True, "removed": 3}, b[:100])
+        s, b, _ = req("GET", "/api/admin/schedule?month=2026-11")
+        check("清空当月后空", s == 200 and json.loads(b)["days"] == [], b[:100])
+        check("清空当月清打卡", not checkin_exists("2026-11-01"), "checkins 不应有 2026-11-01")
+        s, b, _ = req("DELETE", "/api/admin/schedule?month=2026-1")
+        check("清空当月 month 格式 422", s == 422, b[:80])
+
         # --- 级联删除 ---
         req("POST", "/api/day/2026-10-02/checkin")
         s, b, _ = req("DELETE", f"/api/admin/materials/{m_three}")

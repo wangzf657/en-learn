@@ -72,6 +72,7 @@ checkins (date PRIMARY KEY, checked_at)
 | PUT | `/api/admin/materials/{id}/read` | 已读状态：`{read:bool}`→`{id,read,readAt}`；true 时只在 NULL 上置 now（已读保留原时间），false 置 NULL | 404 素材不存在 |
 | POST | `/api/admin/schedule` | 打卡管理·排课：`{courseId,dateFrom,dateTo}`（YYYY-MM-DD，可跨月）；素材自然排序按天均分（n≥d 时前 extra 天 base+1），n<d 时前 n 天各 1、后面留空；`INSERT OR IGNORE` 叠加已有；`{added, scheduled[]{date,materialIds[]}}`（只列区间内涉及的天） | 404 课程不存在；422 日期范围无效 |
 | GET | `/api/admin/schedule?month=YYYY-MM` | 月度排期：`{days[]{date,checked,materials[]{id,title,courseName}}}`（该月有排期的天，素材自然排序） | 422 格式 |
+| DELETE | `/api/admin/schedule?month=YYYY-MM` | 清空当月全部排期 + 删当月打卡，`{ok, removed}` | 422 格式 |
 | POST | `/api/admin/day/{date}/materials` | 逐天补素材：`{materialIds[]}`，`{added}` | 422 materialIds 不能为空/素材不存在: {id} |
 | DELETE | `/api/admin/day/{date}` | 清空当天排期 + 删当天打卡，`{ok, removed}` | — |
 | DELETE | `/api/admin/day/{date}/materials/{materialId}` | 移除当天一条素材；当天变空则连带删打卡 | 404 当天没有学习任务；422 当天未排此素材 |

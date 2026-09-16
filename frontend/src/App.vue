@@ -65,8 +65,8 @@ const route = useRoute()
 }
 
 .app-bar-inner {
-  width: 1120px;
-  max-width: 100%;
+  width: var(--layout-width);
+  max-width: var(--layout-max);
   margin: 0 auto;
   padding: 12px 24px;
   display: flex;

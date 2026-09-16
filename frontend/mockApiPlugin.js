@@ -338,6 +338,18 @@ export default function mockApiPlugin() {
           return sendJson(res, 200, { days: Object.values(dayMap) })
         }
 
+        // DELETE /api/admin/schedule?month=YYYY-MM
+        if (adminScheduleMatch && req.method === "DELETE") {
+          const month = adminScheduleMatch[1]
+          let removed = 0
+          for (const m of materials) {
+            const before = (m.dates || []).length
+            m.dates = (m.dates || []).filter((d) => !d.startsWith(month))
+            removed += before - (m.dates || []).length
+          }
+          return sendJson(res, 200, { ok: true, removed })
+        }
+
         // POST /api/admin/day/:date/materials
         const dayMaterialsMatch = url.match(/^\/admin\/day\/([\d-]+)\/materials$/)
         if (dayMaterialsMatch && req.method === "POST") {

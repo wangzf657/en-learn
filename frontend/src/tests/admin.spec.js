@@ -235,6 +235,9 @@ describe('Admin.vue checkin management', () => {
           },
         }
       }
+      if (url.match(/^\/api\/admin\/schedule\?month=/) && options.method === 'DELETE') {
+        return { body: { ok: true, removed: 2 } }
+      }
       if (url.match(/^\/api\/admin\/day\/[\d-]+$/) && options.method === 'DELETE') {
         return { body: { ok: true, removed: 1 } }
       }
@@ -283,6 +286,25 @@ describe('Admin.vue checkin management', () => {
     expect(confirmSpy).toHaveBeenCalled()
 
     const deleteCall = fetchCalls.find((c) => c.method === 'DELETE' && c.url.match(/^\/api\/admin\/day\/[\d-]+$/))
+    expect(deleteCall).toBeTruthy()
+
+    vi.unstubAllGlobals()
+  })
+
+  it('clears a month after confirm', async () => {
+    const confirmSpy = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirmSpy)
+
+    const { wrapper } = await mountWithRouter(Admin, {}, '/admin')
+    await flushPromises()
+
+    const clearBtn = wrapper.findAll('.calendar-section button').find((b) => b.text() === '清空当月')
+    await clearBtn.trigger('click')
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(confirmSpy).toHaveBeenCalled()
+
+    const deleteCall = fetchCalls.find((c) => c.method === 'DELETE' && c.url.match(/^\/api\/admin\/schedule\?month=/))
     expect(deleteCall).toBeTruthy()
 
     vi.unstubAllGlobals()
