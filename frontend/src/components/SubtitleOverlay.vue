@@ -17,7 +17,7 @@ const currentCue = computed(() => {
 
 <template>
   <div class="subtitle-overlay" :class="[styleClass, { 'sub-off': !enabled }]" aria-live="polite">
-    <Transition name="cue">
+    <Transition name="cue" mode="out-in">
       <p v-if="currentCue" :key="currentCue.text" class="subtitle-cue">{{ currentCue.text }}</p>
     </Transition>
   </div>
@@ -82,26 +82,24 @@ const currentCue = computed(() => {
   display: none;
 }
 
-/* 台词切换:轻微上浮淡入,不抢戏 */
+/* 台词切换:只做入场(淡入上浮) */
 .cue-enter-active {
   transition: opacity 200ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.cue-leave-active {
-  transition: opacity 120ms ease;
-  position: absolute;
-  left: 0;
-  right: 0;
-}
-
-.cue-leave-to {
-  opacity: 0;
 }
 
 .cue-enter-from {
   opacity: 0;
   transform: translateY(10px) scale(0.96);
 }
+
+/*
+  刻意不写 .cue-leave-active / -to:
+  容器宽度由在流内容决定(width: max-content),离场元素一旦脱离文档流,
+  句间间隙时容器会塌缩到 ~0 宽,旧字幕被逐字挤成竖排。
+  不声明离场过渡 → Vue 判定无过渡,旧句同帧立即移除,间隙就是干净空白;
+  配合 mode="out-in" 保证新旧字幕绝不共存,容器宽度永不被求和/塌缩。
+  !!! 不要为 .cue-* 添加 leave 过渡,除非离场元素能拿到与在流时一致的宽度 !!!
+*/
 
 @media (max-width: 640px) {
   .subtitle-cue {

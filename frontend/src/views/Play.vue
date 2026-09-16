@@ -20,7 +20,7 @@ const checkinLoading = ref(false)
 const toast = ref('')
 const celebrate = ref(false)
 
-const cues = ref([])
+const srtCues = ref([])
 const subtitleStyle = ref('sub-clean')
 
 const videoEl = ref(null)
@@ -38,6 +38,17 @@ const sentences = computed(() => currentMaterial.value?.subtitle?.sentences || [
 const videoSrc = computed(() => currentMaterial.value?.videoUrl || '')
 const srtUrl = computed(() => currentMaterial.value?.srtUrl || null)
 const pageTitle = computed(() => currentMaterial.value?.title || props.date)
+
+// 浮层字幕优先同步派生自内存中的 sentences(已带 start/end/en),切换素材立即有数据不闪空;
+// 仅当 sentences 为空才用 srt 文本兜底。
+const cues = computed(() =>
+  sentences.value.length
+    ? sentences.value.map((s) => ({ start: s.start, end: s.end, text: s.en || '' }))
+    : srtCues.value,
+)
+
+const segmentStopAt = ref(null)
+let segmentRaf = 0
 
 const scoreMap = ref(new Map())
 
@@ -61,15 +72,20 @@ watch(
 )
 
 watch(currentMaterialIndex, () => {
-  cues.value = []
+  clearSegment()
   currentTime.value = 0
   duration.value = 0
-  loadSrtForCurrentMaterial()
+  loadCuesFallback()
   const v = videoEl.value
   if (v) {
     v.pause()
     v.load()
   }
+})
+
+// 播放恢复时重启片段检测循环(缓冲暂停会让 rAF 循环自然停下)
+watch(playing, (isPlaying) => {
+  if (isPlaying) startSegmentLoop()
 })
 
 function scoreState(i) {
@@ -86,6 +102,7 @@ function openRepeat(s, i) {
   repeatSentence.value = s
   repeatIndex.value = i
   repeatOpen.value = true
+  clearSegment()
   videoEl.value?.pause()
 }
 
@@ -153,7 +170,7 @@ async function load() {
     day.value = data
     currentMaterialIndex.value = 0
     checkedIn.value = !!data.checked
-    await loadSrtForCurrentMaterial()
+    await loadCuesFallback()
   } catch (e) {
     error.value = e.detail || e.message
     day.value = null
@@ -162,28 +179,57 @@ async function load() {
   }
 }
 
-async function loadSrtForCurrentMaterial() {
+let srtReqId = 0
+
+// sentences 为空时才拉 srt;序号校验丢弃切换素材后迟到的响应
+async function loadCuesFallback() {
+  const reqId = ++srtReqId
+  srtCues.value = []
   const url = srtUrl.value
-  if (!url) {
-    cues.value = []
-    return
-  }
+  if (!url || sentences.value.length) return
   try {
     const res = await fetch(url)
-    if (!res.ok) {
-      cues.value = []
-      return
-    }
+    if (reqId !== srtReqId) return
+    if (!res.ok) return
     const text = await res.text()
-    cues.value = parseSrt(text)
+    if (reqId !== srtReqId) return
+    srtCues.value = parseSrt(text)
   } catch {
-    cues.value = []
+    if (reqId !== srtReqId) return
   }
+}
+
+function clearSegment() {
+  segmentStopAt.value = null
+  if (segmentRaf) {
+    cancelAnimationFrame?.(segmentRaf)
+    segmentRaf = 0
+  }
+}
+
+function segmentTick() {
+  segmentRaf = 0
+  const v = videoEl.value
+  if (segmentStopAt.value == null || !v) return
+  if (v.currentTime >= segmentStopAt.value) {
+    v.pause()
+    clearSegment()
+    return
+  }
+  if (!v.paused) segmentRaf = requestAnimationFrame(segmentTick)
+}
+
+function startSegmentLoop() {
+  if (segmentRaf || segmentStopAt.value == null) return
+  const v = videoEl.value
+  if (v && v.paused) return
+  segmentRaf = requestAnimationFrame(segmentTick)
 }
 
 function togglePlay() {
   const v = videoEl.value
   if (!v) return
+  clearSegment()
   if (v.paused) v.play()
   else v.pause()
 }
@@ -193,6 +239,11 @@ function onTimeUpdate() {
   if (!v) return
   currentTime.value = v.currentTime
   if (v.duration && !isNaN(v.duration)) duration.value = v.duration
+  // rAF 在 happy-dom 测试环境下可能不推进,这里做兜底检测
+  if (segmentStopAt.value != null && v.currentTime >= segmentStopAt.value) {
+    v.pause()
+    clearSegment()
+  }
 }
 
 function onLoadedMetadata() {
@@ -202,6 +253,7 @@ function onLoadedMetadata() {
 
 function onEnded() {
   playing.value = false
+  clearSegment()
 }
 
 async function doCheckin() {
@@ -225,6 +277,7 @@ async function doCheckin() {
 function seekToRatio(ratio) {
   const v = videoEl.value
   if (!v || !duration.value) return
+  clearSegment()
   const t = Math.max(0, Math.min(duration.value, ratio * duration.value))
   v.currentTime = t
   currentTime.value = t
@@ -274,7 +327,9 @@ function seekToSentence(s) {
   if (!v) return
   v.currentTime = s.start
   currentTime.value = s.start
+  segmentStopAt.value = s.end
   v.play()
+  startSegmentLoop()
 }
 
 function formatTime(s) {
@@ -287,6 +342,7 @@ function formatTime(s) {
 onBeforeUnmount(() => {
   const v = videoEl.value
   if (v) v.pause()
+  clearSegment()
   window.removeEventListener('mousemove', onDrag)
   window.removeEventListener('mouseup', stopDrag)
   document.removeEventListener('fullscreenchange', onFullscreenChange)

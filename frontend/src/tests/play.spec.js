@@ -116,6 +116,43 @@ describe('Play.vue core interactions', () => {
     expect(played).toBe(true)
   })
 
+  it('pauses automatically at the clicked sentence end', async () => {
+    const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
+
+    const video = wrapper.find('video').element
+    const pauseSpy = vi.fn()
+    video.play = () => Promise.resolve()
+    video.pause = pauseSpy
+
+    await wrapper.findAll('.sentence-card')[1].trigger('click')
+    expect(video.currentTime).toBe(5.0)
+
+    await dispatchTimeUpdate(video, 7.9)
+    expect(pauseSpy).not.toHaveBeenCalled()
+
+    await dispatchTimeUpdate(video, 8.0)
+    expect(pauseSpy).toHaveBeenCalledTimes(1)
+
+    // 状态已清除,不会在过期时间点重复暂停
+    await dispatchTimeUpdate(video, 9.0)
+    expect(pauseSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops the segment stop when the user pauses with the play button', async () => {
+    const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
+
+    const video = wrapper.find('video').element
+    const pauseSpy = vi.fn()
+    video.play = () => Promise.resolve()
+    video.pause = pauseSpy
+
+    await wrapper.findAll('.sentence-card')[1].trigger('click')
+    await wrapper.find('.play-btn').trigger('click')
+
+    await dispatchTimeUpdate(video, 9.0)
+    expect(pauseSpy).not.toHaveBeenCalled()
+  })
+
   it('records repeat in modal and renders score result with colored words', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mountWithRouter, mockFetch, restoreFetch } from './helpers.js'
+import { mountWithRouter, mockFetch, restoreFetch, dispatchTimeUpdate } from './helpers.js'
 import LocalPlay from '../views/LocalPlay.vue'
 
 describe('LocalPlay.vue course playback', () => {
@@ -115,6 +115,32 @@ describe('LocalPlay.vue course playback', () => {
     const offBtn = wrapper.findAll('.style-btn').find((b) => b.text() === '关闭')
     await offBtn.trigger('click')
     expect(overlay.classes()).toContain('sub-off')
+  })
+
+  it('plays a sentence segment and pauses at its end', async () => {
+    const { wrapper } = await mountWithRouter(LocalPlay, {}, '/local')
+
+    await wrapper.find('.course-header').trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+    await wrapper.find('.material-item').trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    const video = wrapper.find('video').element
+    const pauseSpy = vi.fn()
+    video.play = () => Promise.resolve()
+    video.pause = pauseSpy
+
+    await wrapper.find('.sentence-card').trigger('click')
+    expect(video.currentTime).toBe(1)
+
+    await dispatchTimeUpdate(video, 2.5)
+    expect(pauseSpy).not.toHaveBeenCalled()
+
+    await dispatchTimeUpdate(video, 3)
+    expect(pauseSpy).toHaveBeenCalledTimes(1)
+
+    await dispatchTimeUpdate(video, 4)
+    expect(pauseSpy).toHaveBeenCalledTimes(1)
   })
 
   it('toggles sidebar collapsed state', async () => {
