@@ -248,7 +248,7 @@ watch(
 
 .en {
   font-family: var(--font-display);
-  font-size: 32px;
+  font-size: 24px;
   font-weight: 700;
   line-height: 1.45;
   margin: 0 0 8px;
@@ -256,7 +256,7 @@ watch(
 }
 
 .zh {
-  font-size: 24px;
+  font-size: 18px;
   color: var(--muted);
   margin: 0;
 }

@@ -23,7 +23,7 @@ let alive = true
 const defaultText = computed(() => props.sentence?.en || '')
 const reference = computed(() => customText.value.trim() || defaultText.value)
 
-// 正在朗读的条目:'sentence' | 'words' | null
+// 正在朗读的条目:'sentence' | 'words' | 'custom' | null
 const speakingKey = ref(null)
 
 const overallScore = computed(() => {
@@ -72,6 +72,19 @@ function toggleSpeakSentence() {
   synth.cancel()
   speakingKey.value = key
   synth.speak(makeUtterance(defaultText.value, () => {
+    if (speakingKey.value === key) speakingKey.value = null
+  }))
+}
+
+// 朗读文本框内容(自定义跟读文本),再点一次停止
+function toggleSpeakCustom() {
+  const key = 'custom'
+  if (speakingKey.value === key) return stopSpeaking()
+  if (!('speechSynthesis' in window) || !reference.value) return
+  const synth = window.speechSynthesis
+  synth.cancel()
+  speakingKey.value = key
+  synth.speak(makeUtterance(reference.value, () => {
     if (speakingKey.value === key) speakingKey.value = null
   }))
 }
@@ -300,15 +313,7 @@ function close() {
           </div>
 
           <div class='custom-input'>
-            <div class='custom-head'>
-              <label for='repeat-custom'>跟读文本</label>
-              <button
-                v-if='customText.trim() !== defaultText.trim()'
-                type='button'
-                class='restore-btn'
-                @click='restoreSentence'
-              >恢复台词</button>
-            </div>
+            <label for='repeat-custom'>跟读文本</label>
             <input
               id='repeat-custom'
               v-model.trim='customText'
@@ -316,6 +321,30 @@ function close() {
               placeholder='输入想跟读的内容'
               @keydown.space.stop
             />
+            <button
+              v-if='customText.trim() !== defaultText.trim()'
+              type='button'
+              class='restore-btn'
+              @click='restoreSentence'
+            >恢复台词</button>
+            <button
+              type='button'
+              class='speak-custom-btn'
+              :class='{ speaking: speakingKey === "custom" }'
+              :title='speakingKey === "custom" ? "停止朗读" : "朗读文本框内容"'
+              :aria-label='speakingKey === "custom" ? "停止朗读" : "朗读文本框内容"'
+              @click='toggleSpeakCustom'
+            >
+              <svg v-if='speakingKey !== "custom"' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
+                <polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5'></polygon>
+                <path d='M15.54 8.46a5 5 0 0 1 0 7.07'></path>
+                <path d='M19.07 4.93a10 10 0 0 1 0 14.14'></path>
+              </svg>
+              <svg v-else width='14' height='14' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'>
+                <rect x='7' y='7' width='10' height='10' rx='2'></rect>
+              </svg>
+              <span>{{ speakingKey === "custom" ? '停止' : '朗读' }}</span>
+            </button>
           </div>
 
           <div class='record-area'>
@@ -619,19 +648,13 @@ function close() {
 
 .custom-input {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.custom-head {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
 }
 
 .restore-btn {
-  font-size: 18px;
+  flex: none;
+  font-size: 16px;
   font-weight: 700;
   color: var(--blue);
   padding: 2px 8px;
@@ -643,14 +666,51 @@ function close() {
   background: var(--blue-bg);
 }
 
+.speak-custom-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 46px;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--blue);
+  background: var(--blue-bg);
+  border: 2px solid transparent;
+  box-shadow: var(--shadow-pop);
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition), transform var(--transition), box-shadow var(--transition);
+}
+
+.speak-custom-btn:hover {
+  border-color: var(--blue);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.speak-custom-btn:active {
+  transform: translateY(1px) scale(0.96);
+}
+
+.speak-custom-btn.speaking {
+  color: #fff;
+  background: var(--grad-blue);
+  border-color: transparent;
+  animation: speak-ring 1.1s ease-in-out infinite;
+}
+
 .custom-input label {
+  flex: none;
   font-size: 18px;
   font-weight: 700;
   color: var(--muted);
 }
 
 .custom-input input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .record-area {
