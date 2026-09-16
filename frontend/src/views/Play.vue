@@ -1,22 +1,29 @@
 <script setup>
 import { ref, computed, watch, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { dayApi, scoringApi } from '../api.js'
-import { startRecording } from '../utils/recorder.js'
+import { dayApi } from '../api.js'
+import { parseSrt } from '../utils/srt.js'
+import SubtitleOverlay from '../components/SubtitleOverlay.vue'
+import SubtitleStylePicker from '../components/SubtitleStylePicker.vue'
+import SubtitlePanel from '../components/SubtitlePanel.vue'
+import RepeatModal from '../components/RepeatModal.vue'
 
 const props = defineProps({ date: String })
 const router = useRouter()
 
 const day = ref(null)
+const currentMaterialIndex = ref(0)
 const loading = ref(true)
 const error = ref('')
 const checkedIn = ref(false)
-const checkinSent = ref(false)
+const checkinLoading = ref(false)
 const toast = ref('')
+
+const cues = ref([])
+const subtitleStyle = ref('sub-clean')
 
 const videoEl = ref(null)
 const progressEl = ref(null)
-const sentenceRefs = ref([])
 
 const playing = ref(false)
 const currentTime = ref(0)
@@ -25,75 +32,95 @@ const volume = ref(1)
 const playbackRate = ref(1)
 const rates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
-const sentences = computed(() => day.value?.subtitle?.sentences || [])
+const currentMaterial = computed(() => day.value?.materials?.[currentMaterialIndex.value] || null)
+const sentences = computed(() => currentMaterial.value?.subtitle?.sentences || [])
+const videoSrc = computed(() => currentMaterial.value?.videoUrl || '')
+const srtUrl = computed(() => currentMaterial.value?.srtUrl || null)
+const pageTitle = computed(() => currentMaterial.value?.title || props.date)
+
 const scoreMap = ref(new Map())
-let recordingController = null
+
+const subtitleOpen = ref(true)
+const isFullscreen = ref(false)
+const layoutRef = ref(null)
+
+const repeatOpen = ref(false)
+const repeatSentence = ref(null)
+const repeatIndex = ref(-1)
 
 watch(
   sentences,
   (list) => {
+    scoreMap.value = new Map()
     list.forEach((_, i) => {
-      if (!scoreMap.value.has(i)) {
-        scoreMap.value.set(i, reactive({ status: 'idle', result: null, error: '' }))
-      }
+      scoreMap.value.set(i, reactive({ status: 'idle', result: null, error: '' }))
     })
   },
   { immediate: true },
 )
 
+watch(currentMaterialIndex, () => {
+  cues.value = []
+  currentTime.value = 0
+  duration.value = 0
+  loadSrtForCurrentMaterial()
+  const v = videoEl.value
+  if (v) {
+    v.pause()
+    v.load()
+  }
+})
+
 function scoreState(i) {
   return scoreMap.value.get(i) || { status: 'idle', result: null, error: '' }
-}
-
-async function startRepeat(i) {
-  if (recordingController) {
-    try { await recordingController.stop() } catch {}
-    recordingController = null
-  }
-  const state = scoreState(i)
-  state.error = ''
-  state.result = null
-  state.status = 'recording'
-  videoEl.value?.pause()
-  try {
-    recordingController = await startRecording()
-  } catch (e) {
-    state.status = 'idle'
-    state.error = e.message
-  }
-}
-
-async function stopRepeat(i, reference) {
-  const state = scoreState(i)
-  if (!recordingController) {
-    state.status = 'idle'
-    return
-  }
-  state.status = 'scoring'
-  try {
-    const blob = await recordingController.stop()
-    recordingController = null
-    const result = await scoringApi.score(blob, reference)
-    state.result = result
-    state.status = 'result'
-  } catch (e) {
-    state.status = 'idle'
-    state.error = e.detail || e.message
-  }
-}
-
-function toggleRepeat(i, s) {
-  if (scoreState(i).status === 'recording') {
-    stopRepeat(i, s.en)
-  } else {
-    startRepeat(i)
-  }
 }
 
 function wordScoreClass(score) {
   if (score >= 80) return 'word-good'
   if (score >= 60) return 'word-ok'
   return 'word-bad'
+}
+
+function openRepeat(s, i) {
+  repeatSentence.value = s
+  repeatIndex.value = i
+  repeatOpen.value = true
+  videoEl.value?.pause()
+}
+
+function closeRepeat() {
+  repeatOpen.value = false
+}
+
+function onRepeatResult(i, result) {
+  const state = scoreState(i)
+  state.result = result
+  state.error = ''
+}
+
+function onRepeatError(i, message) {
+  const state = scoreState(i)
+  state.error = message
+}
+
+function toggleSubtitle() {
+  subtitleOpen.value = !subtitleOpen.value
+}
+
+async function toggleFullscreen() {
+  const el = layoutRef.value
+  if (!el) return
+  try {
+    if (!document.fullscreenElement) {
+      await el.requestFullscreen?.()
+    } else {
+      await document.exitFullscreen?.()
+    }
+  } catch {}
+}
+
+function onFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement
 }
 
 const currentIndex = computed(() => {
@@ -112,13 +139,10 @@ const progressPercent = computed(() => {
   return Math.min(100, Math.max(0, (currentTime.value / duration.value) * 100))
 })
 
-watch(currentIndex, (next, prev) => {
-  if (next !== prev && next >= 0 && sentenceRefs.value[next]) {
-    sentenceRefs.value[next].scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
+onMounted(() => {
+  load()
+  document.addEventListener('fullscreenchange', onFullscreenChange)
 })
-
-onMounted(load)
 
 async function load() {
   loading.value = true
@@ -126,12 +150,33 @@ async function load() {
   try {
     const data = await dayApi.get(props.date)
     day.value = data
+    currentMaterialIndex.value = 0
     checkedIn.value = !!data.checked
+    await loadSrtForCurrentMaterial()
   } catch (e) {
     error.value = e.detail || e.message
     day.value = null
   } finally {
     loading.value = false
+  }
+}
+
+async function loadSrtForCurrentMaterial() {
+  const url = srtUrl.value
+  if (!url) {
+    cues.value = []
+    return
+  }
+  try {
+    const res = await fetch(url)
+    if (!res.ok) {
+      cues.value = []
+      return
+    }
+    const text = await res.text()
+    cues.value = parseSrt(text)
+  } catch {
+    cues.value = []
   }
 }
 
@@ -147,11 +192,6 @@ function onTimeUpdate() {
   if (!v) return
   currentTime.value = v.currentTime
   if (v.duration && !isNaN(v.duration)) duration.value = v.duration
-  if (!checkinSent.value && !checkedIn.value && v.duration) {
-    if (v.currentTime / v.duration >= 0.9) {
-      doCheckin()
-    }
-  }
 }
 
 function onLoadedMetadata() {
@@ -161,20 +201,21 @@ function onLoadedMetadata() {
 
 function onEnded() {
   playing.value = false
-  if (!checkinSent.value && !checkedIn.value) {
-    doCheckin()
-  }
 }
 
 async function doCheckin() {
-  checkinSent.value = true
+  if (checkinLoading.value || checkedIn.value) return
+  checkinLoading.value = true
   try {
     await dayApi.checkin(props.date)
     checkedIn.value = true
     toast.value = '今日已打卡'
     setTimeout(() => (toast.value = ''), 2200)
   } catch (e) {
-    checkinSent.value = false
+    toast.value = e.detail || e.message || '打卡失败'
+    setTimeout(() => (toast.value = ''), 2200)
+  } finally {
+    checkinLoading.value = false
   }
 }
 
@@ -245,10 +286,7 @@ onBeforeUnmount(() => {
   if (v) v.pause()
   window.removeEventListener('mousemove', onDrag)
   window.removeEventListener('mouseup', stopDrag)
-  if (recordingController) {
-    recordingController.stop().catch(() => {})
-    recordingController = null
-  }
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
 })
 </script>
 
@@ -257,14 +295,38 @@ onBeforeUnmount(() => {
     <header class="page-header">
       <button class="btn btn-ghost btn-sm" @click="$router.push('/')">‹ 返回日历</button>
       <div class="title-group">
-        <h1 class="page-title">{{ day?.title || date }}</h1>
+        <h1 class="page-title">{{ pageTitle }}</h1>
         <span v-if="checkedIn" class="badge badge-blue">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           已打卡
         </span>
         <span v-else class="badge badge-yellow">未打卡</span>
+        <button
+          v-if="!checkedIn"
+          class="btn btn-primary btn-sm checkin-btn"
+          :disabled="checkinLoading"
+          @click="doCheckin"
+        >
+          <span v-if="checkinLoading">打卡中…</span>
+          <span v-else>已完成打卡</span>
+        </button>
       </div>
     </header>
+
+    <div v-if="day?.materials?.length > 1" class="video-chips" role="tablist" aria-label="素材切换">
+      <button
+        v-for="(m, i) in day.materials"
+        :key="m.id ?? i"
+        type="button"
+        class="chip"
+        :class="{ active: i === currentMaterialIndex }"
+        role="tab"
+        :aria-selected="i === currentMaterialIndex"
+        @click="currentMaterialIndex = i"
+      >
+        {{ m.title || `素材 ${i + 1}` }}
+      </button>
+    </div>
 
     <div v-if="loading" class="card empty-state">
       <p>正在加载学习内容…</p>
@@ -275,12 +337,12 @@ onBeforeUnmount(() => {
       <button class="btn btn-primary" style="margin-top: 16px" @click="router.push('/')">回日历</button>
     </div>
 
-    <div v-else class="play-layout">
+    <div v-else ref="layoutRef" class="play-layout">
       <section class="video-section card">
         <div class="video-wrap">
           <video
             ref="videoEl"
-            :src="day.videoUrl"
+            :src="videoSrc"
             preload="metadata"
             @timeupdate="onTimeUpdate"
             @loadedmetadata="onLoadedMetadata"
@@ -288,6 +350,12 @@ onBeforeUnmount(() => {
             @pause="playing = false"
             @ended="onEnded"
           ></video>
+          <SubtitleOverlay
+            :cues="cues"
+            :current-time="currentTime"
+            :enabled="subtitleStyle !== 'sub-off'"
+            :style-class="subtitleStyle"
+          />
         </div>
 
         <div class="controls">
@@ -324,56 +392,74 @@ onBeforeUnmount(() => {
             </svg>
             <input id="volume" type="range" min="0" max="1" step="0.05" v-model.number="volume" @input="setVolume" />
           </div>
+
+          <div class="controls-extras">
+            <button
+              class="icon-btn drawer-toggle"
+              type="button"
+              :title="subtitleOpen ? '收起台词' : '展开台词'"
+              @click="toggleSubtitle"
+            >
+              <svg v-if="subtitleOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M9 3v18"/>
+                <path d="M14 9l3 3-3 3"/>
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M15 3v18"/>
+                <path d="M10 9l-3 3 3 3"/>
+              </svg>
+            </button>
+
+            <button
+              class="icon-btn fullscreen-btn"
+              type="button"
+              :title="isFullscreen ? '退出全屏' : '全屏'"
+              @click="toggleFullscreen"
+            >
+              <svg v-if="isFullscreen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 14v5a1 1 0 0 0 1 1h5"/>
+                <path d="M20 14v5a1 1 0 0 1-1 1h-5"/>
+                <path d="M15 4h5a1 1 0 0 1 1 1v5"/>
+                <path d="M9 4H4a1 1 0 0 0-1 1v5"/>
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 3H3v5"/>
+                <path d="M16 3h5v5"/>
+                <path d="M21 16v5h-5"/>
+                <path d="M3 16v5h5"/>
+              </svg>
+            </button>
+
+            <SubtitleStylePicker v-model="subtitleStyle" />
+          </div>
         </div>
       </section>
 
-      <section class="panel-section card">
-        <h2 class="panel-title">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
-          </svg>
-          今日台词
-        </h2>
-        <div v-if="sentences.length === 0" class="empty-state" style="padding: 40px 20px">
-          <p>暂无字幕数据</p>
-        </div>
-        <div v-else class="sentence-list">
-          <div
-            v-for="(s, i) in sentences"
-            :key="i"
-            ref="sentenceRefs"
-            class="sentence-card"
-            :class="{ active: i === currentIndex }"
-            @click="seekToSentence(s)"
-          >
-            <div class="sentence-main">
-              <p class="en">{{ s.en }}</p>
-              <p v-if="s.zh" class="zh">{{ s.zh }}</p>
-            </div>
-
-            <div v-if="s.words?.length" class="words">
-              <div v-for="(w, j) in s.words" :key="j" class="word-chip">
-                <span class="w">{{ w.w }}</span>
-                <span v-if="w.phonetic" class="phonetic">/{{ w.phonetic }}/</span>
-                <span v-if="w.note" class="note">{{ w.note }}</span>
-              </div>
-            </div>
-
+      <div class="subtitle-drawer" :class="{ open: subtitleOpen }">
+        <SubtitlePanel
+          title="今日台词"
+          :sentences="sentences"
+          :current-index="currentIndex"
+          empty-text="暂无字幕数据"
+          @seek="seekToSentence"
+        >
+          <template #actions="{ s, i }">
             <div class="repeat-row">
               <button
                 class="btn btn-sm repeat-btn"
-                :class="scoreState(i).status === 'recording' ? 'btn-secondary recording' : 'btn-primary'"
-                :disabled="scoreState(i).status === 'scoring'"
-                @click.stop="toggleRepeat(i, s)"
+                :class="scoreState(i).result ? 'btn-secondary' : 'btn-primary'"
+                @click.stop="openRepeat(s, i)"
               >
-                <svg v-if="scoreState(i).status === 'recording'" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
-                <svg v-else-if="scoreState(i).status === 'scoring'" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8Z" opacity=".4"/><path d="M12 6v6l4 2"/></svg>
-                <svg v-else-if="scoreState(i).result" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
-                <span v-if="scoreState(i).status === 'recording'">停止录音</span>
-                <span v-else-if="scoreState(i).status === 'scoring'">评分中…</span>
-                <span v-else-if="scoreState(i).result">重新跟读</span>
-                <span v-else>跟读一下</span>
+                <svg v-if="scoreState(i).result" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+                <span>{{ scoreState(i).result ? '重新跟读' : '跟读一下' }}</span>
               </button>
             </div>
 
@@ -402,10 +488,18 @@ onBeforeUnmount(() => {
                 </span>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
+          </template>
+        </SubtitlePanel>
+      </div>
     </div>
+
+    <RepeatModal
+      :open="repeatOpen"
+      :sentence="repeatSentence"
+      @close="closeRepeat"
+      @result="onRepeatResult(repeatIndex, $event)"
+      @error="onRepeatError(repeatIndex, $event)"
+    />
 
     <transition name="fade">
       <div v-if="toast" class="toast">
@@ -420,7 +514,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .play-page {
-  padding-top: 20px;
+  width: 100%;
+  max-width: none;
+  padding: 20px 24px 80px;
 }
 
 .title-group {
@@ -430,23 +526,92 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
+.checkin-btn {
+  margin-left: 4px;
+}
+
+.video-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.chip {
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.chip:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.chip.active {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
+
 .play-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
+  display: flex;
+  gap: 0;
+  align-items: stretch;
+}
+
+.play-layout:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  padding: 0;
+  background: var(--bg);
+}
+
+.play-layout:fullscreen .video-section {
+  position: static;
+  border-radius: 0;
+  border: none;
+}
+
+.play-layout:fullscreen .video-wrap {
+  border-radius: 0;
+  max-height: none;
 }
 
 .video-section {
+  flex: 1 1 auto;
+  min-width: 0;
   position: sticky;
   top: 84px;
   padding: 0;
   overflow: hidden;
 }
 
+.subtitle-drawer {
+  flex: 0 0 auto;
+  width: 0;
+  overflow: hidden;
+  transition: width 300ms cubic-bezier(0.32, 0.72, 0, 1), margin-left 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.subtitle-drawer.open {
+  width: 25%;
+  min-width: 220px;
+  margin-left: 24px;
+}
+
 .video-wrap {
+  position: relative;
   background: #000;
+  width: 100%;
   aspect-ratio: 16 / 9;
+  max-height: calc(100svh - 168px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -462,7 +627,7 @@ video {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 16px 20px;
+  padding: 14px 20px;
   background: var(--bg);
 }
 
@@ -565,107 +730,17 @@ video {
 }
 
 .volume-area input[type='range'] {
-  width: 100px;
+  width: 80px;
   padding: 0;
   min-height: auto;
   accent-color: var(--blue);
 }
 
-.panel-section {
-  padding: 22px 24px;
-  max-height: calc(100svh - 160px);
-  overflow-y: auto;
-}
-
-.panel-title {
-  display: flex;
+.controls-extras {
+  flex: 0 0 auto;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 20px;
-  margin-bottom: 18px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--ink);
-}
-
-.sentence-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.sentence-card {
-  padding: 18px 20px;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--border);
-  background: var(--card);
-  cursor: pointer;
-  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
-}
-
-.sentence-card:hover {
-  border-color: var(--blue);
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-2px);
-}
-
-.sentence-card.active {
-  background: var(--blue-bg);
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
-}
-
-.sentence-main {
-  margin-bottom: 10px;
-}
-
-.en {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.5;
-  margin: 0 0 6px;
-  color: var(--ink);
-}
-
-.zh {
-  font-size: 14px;
-  color: var(--muted);
-  margin: 0;
-}
-
-.words {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
-.word-chip {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  font-size: 13px;
-}
-
-.word-chip .w {
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.word-chip .phonetic {
-  font-family: var(--font-mono);
-  color: var(--blue);
-  font-size: 12px;
-}
-
-.word-chip .note {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 .repeat-row {
@@ -676,14 +751,6 @@ video {
 
 .repeat-btn {
   min-width: 100px;
-}
-
-.repeat-btn.recording {
-  animation: pulse 1.2s ease-in-out infinite;
-  background: var(--red-bg);
-  color: var(--red);
-  border: 1px solid var(--red);
-  box-shadow: none;
 }
 
 .score-error {
@@ -804,13 +871,16 @@ video {
 
 @media (max-width: 1024px) {
   .play-layout {
-    grid-template-columns: 1fr;
+    flex-direction: column;
   }
   .video-section {
     position: static;
   }
-  .panel-section {
-    max-height: none;
+  .subtitle-drawer.open {
+    width: 100%;
+    min-width: auto;
+    margin-left: 0;
+    margin-top: 20px;
   }
 }
 

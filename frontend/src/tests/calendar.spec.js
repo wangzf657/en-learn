@@ -9,7 +9,7 @@ describe('Home.vue calendar', () => {
         return {
           body: {
             days: [
-              { date: '2026-09-14', videoId: 1, title: '日常问候', checked: false },
+              { date: '2026-09-14', materialId: 1, title: '日常问候', checked: false, materialCount: 1 },
             ],
           },
         }

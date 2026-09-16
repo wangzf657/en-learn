@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EnLearn 字幕 JSON",
+  "description": "字幕数据结构的唯一权威(原 docs/subtitle-contract.md 字段表)。校验执行:导入硬校验 = main.py normalize_subtitle();强约定校验(含跨字段/语义规则超集)= .agents/skills/srt-to-json/scripts/srt_tool.py check。校验分层、存储传输、时间轴语义等 app 侧说明见 docs/design.md §4。",
+  "type": "object",
+  "required": ["sentences"],
+  "additionalProperties": true,
+  "properties": {
+    "sentences": {
+      "type": "array",
+      "description": "按 start 升序;元素顺序即前端渲染顺序;空数组 = 无字幕(合法)",
+      "items": { "$ref": "#/$defs/sentence" }
+    }
+  },
+  "$defs": {
+    "sentence": {
+      "type": "object",
+      "required": ["start", "end", "en"],
+      "properties": {
+        "start": {
+          "type": "number",
+          "minimum": 0,
+          "description": "起始时间(秒);点击句子 seek 到此"
+        },
+        "end": {
+          "type": "number",
+          "description": "结束时间(秒)。必须 > start——跨字段比较 JSON Schema 表达不了,由 srt_tool check 强约定拦截"
+        },
+        "en": {
+          "type": "string",
+          "description": "英文原文:一个完整、可独立跟读的语句单元(不是 cue 碎片);同时是跟读评分参考文本,逐字不得改写"
+        },
+        "zh": {
+          "type": "string",
+          "description": "中文翻译,自然口语,不逐词硬译"
+        },
+        "words": {
+          "type": "array",
+          "description": "重点词,每句 0-3 个为宜",
+          "items": { "$ref": "#/$defs/word" }
+        },
+        "note": {
+          "type": "string",
+          "description": "整句笔记(句型/语法点)。前端当前未渲染;宁缺毋滥"
+        }
+      }
+    },
+    "word": {
+      "type": "object",
+      "required": ["w"],
+      "properties": {
+        "w": {
+          "type": "string",
+          "description": "表层形:与 en 中出现的拼写一致(含缩写、变形,不还原词干)——对齐跟读评分 word_scores[].word"
+        },
+        "phonetic": {
+          "type": "string",
+          "pattern": "^[^/]*$",
+          "description": "美式 IPA 音标,裸串不含斜杠(前端渲染时自加 /…/)"
+        },
+        "note": {
+          "type": "string",
+          "description": "中文讲解,口语化短句"
+        }
+      }
+    }
+  },
+  "$comment": "演进规则:只增可选字段(旧数据不迁移即兼容);不改名、不改语义(要改就新增字段、废弃旧字段,前端两代同读);前端对未知字段一律忽略,故不锁 additionalProperties;单机自用,不引入 version 字段。改结构先改本文件,再改代码。"
+}

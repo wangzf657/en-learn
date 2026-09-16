@@ -18,3 +18,5 @@ data/
 docker-compose.override.yml
 *.pyc
 .zed
+
+videos/

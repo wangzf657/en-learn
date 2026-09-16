@@ -45,17 +45,59 @@ export const dayApi = {
 }
 
 export const adminApi = {
-  list() {
-    return request('/admin/videos')
+  getLibrary() {
+    return request('/admin/library')
   },
-  remove(id) {
-    return request(`/admin/videos/${id}`, { method: 'DELETE' })
-  },
-  importVideos(path, month) {
-    return request('/admin/videos/import', {
-      method: 'POST',
-      body: JSON.stringify({ path, month }),
+  saveLibrary(root) {
+    return request('/admin/library', {
+      method: 'PUT',
+      body: JSON.stringify({ root }),
     })
+  },
+  importCourse(folder) {
+    return request('/admin/courses/import', {
+      method: 'POST',
+      body: JSON.stringify({ folder }),
+    })
+  },
+  listCourses() {
+    return request('/admin/courses')
+  },
+  getCourse(id) {
+    return request(`/admin/courses/${id}`)
+  },
+  deleteCourse(id) {
+    return request(`/admin/courses/${id}`, { method: 'DELETE' })
+  },
+  deleteMaterial(id) {
+    return request(`/admin/materials/${id}`, { method: 'DELETE' })
+  },
+  setMaterialRead(id, read) {
+    return request(`/admin/materials/${id}/read`, {
+      method: 'PUT',
+      body: JSON.stringify({ read }),
+    })
+  },
+  createSchedule(courseId, dateFrom, dateTo) {
+    return request('/admin/schedule', {
+      method: 'POST',
+      body: JSON.stringify({ courseId, dateFrom, dateTo }),
+    })
+  },
+  getSchedule(month) {
+    return request(`/admin/schedule?month=${encodeURIComponent(month)}`)
+  },
+  addDayMaterials(date, materialIds) {
+    return request(`/admin/day/${date}/materials`, {
+      method: 'POST',
+      body: JSON.stringify({ materialIds }),
+    })
+  },
+  deleteDay(date) {
+    return request(`/admin/day/${date}`, { method: 'DELETE' })
+  },
+  removeDayMaterial(date, materialId) {
+    return request(`/admin/day/${date}/materials/${materialId}`, { method: 'DELETE' })
   },
 }
 

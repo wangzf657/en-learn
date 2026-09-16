@@ -5,11 +5,13 @@ import './style.css'
 
 import Home from './views/Home.vue'
 import Play from './views/Play.vue'
+import LocalPlay from './views/LocalPlay.vue'
 import Admin from './views/Admin.vue'
 
 const routes = [
   { path: '/', component: Home },
   { path: '/play/:date', component: Play, props: true },
+  { path: '/local', component: LocalPlay },
   { path: '/admin', component: Admin },
 ]
 

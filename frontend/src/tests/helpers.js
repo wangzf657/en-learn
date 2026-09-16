@@ -6,6 +6,7 @@ import { nextTick } from 'vue'
 const routes = [
   { path: '/', component: { template: '<div>home</div>' } },
   { path: '/play/:date', component: { template: '<div>play</div>' }, props: true },
+  { path: '/local', component: { template: '<div>local</div>' } },
   { path: '/admin', component: { template: '<div>admin</div>' } },
 ]
 

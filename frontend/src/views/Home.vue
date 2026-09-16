@@ -57,7 +57,7 @@ function nextMonth() {
 
 function goPlay(date) {
   const info = dayMap.value[date]
-  if (info && info.videoId != null) {
+  if (info && info.materialId != null) {
     router.push(`/play/${date}`)
   }
 }
@@ -69,21 +69,6 @@ function isToday(date) {
 
 <template>
   <div class="page calendar-page">
-    <header class="page-header">
-      <div class="hero-title">
-        <img :src="mascotUrl" alt="" class="mascot-sm" />
-        <div>
-          <h1 class="page-title">每日英语</h1>
-          <p class="page-subtitle">每天进步一点点，跟读打卡学英语</p>
-        </div>
-      </div>
-      <router-link to="/admin" class="icon-btn settings" title="后台管理">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-        </svg>
-      </router-link>
-    </header>
 
     <div v-if="error" class="error-detail">{{ error }}</div>
 
@@ -117,7 +102,7 @@ function isToday(date) {
               class="cell day-cell"
               :class="{
                 'is-today': date && isToday(date),
-                'has-video': date && dayMap[date]?.videoId != null,
+                'has-video': date && dayMap[date]?.materialId != null,
                 checked: date && dayMap[date]?.checked,
               }"
               @click="date && goPlay(date)"
@@ -128,7 +113,7 @@ function isToday(date) {
                   <span v-if="dayMap[date]?.checked" class="check-mark" aria-label="已打卡">★</span>
                 </div>
                 <span v-if="dayMap[date]?.title" class="day-title">{{ dayMap[date].title }}</span>
-                <span v-else-if="dayMap[date]?.videoId != null" class="day-hint">开始跟读</span>
+                <span v-else-if="dayMap[date]?.materialId != null" class="day-hint">开始跟读</span>
               </template>
             </div>
           </div>
@@ -283,13 +268,6 @@ function isToday(date) {
   background: rgba(255, 204, 0, 0.08);
 }
 
-.settings {
-  position: fixed;
-  top: 84px;
-  right: 24px;
-  z-index: 10;
-}
-
 @media (max-width: 768px) {
   .hero-title {
     gap: 10px;
@@ -306,10 +284,6 @@ function isToday(date) {
     width: 24px;
     height: 24px;
     font-size: 13px;
-  }
-  .settings {
-    top: 72px;
-    right: 12px;
   }
 }
 </style>
