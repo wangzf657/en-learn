@@ -23,6 +23,9 @@ class MockProvider(ScoringProvider):
                 expected_phonemes="mɒk",
                 actual_phonemes="mɒk",
                 phoneme_scores=[85.0, 80.0, 90.0],
+                phonemes=list(w),
+                type=2,
+                stress=1,
             )
             for w in reference_text.split()
         ]
@@ -31,4 +34,6 @@ class MockProvider(ScoringProvider):
             fluency_score=78.0,
             completeness_score=90.0,
             word_scores=word_scores,
+            sample=reference_text,
+            usertext=reference_text,
         )

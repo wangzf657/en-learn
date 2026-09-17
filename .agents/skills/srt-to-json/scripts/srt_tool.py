@@ -79,6 +79,14 @@ def parse_srt(path: Path):
     return cues
 
 
+def _span_in(tokens, need):
+    """need 是否为 tokens 的连续子序列(两侧已统一小写/撇号)。
+
+    单元素 = 单词须精确命中 token;多元素 = 词组须与 en 中一段连续词完全一致。
+    """
+    return any(tokens[i : i + len(need)] == need for i in range(len(tokens) - len(need) + 1))
+
+
 def check_pair(srt: Path, js: Path):
     """校验富化后的 JSON。返回 (errors, warnings);errors 非空 = 不可交付。"""
     errs, warns = [], []
@@ -139,16 +147,20 @@ def check_pair(srt: Path, js: Path):
             if not isinstance(ws, list):
                 errs.append(f"{tag}: words 必须是数组")
             else:
-                if len(ws) > 3:
-                    warns.append(f"{tag}: words {len(ws)} 个 > 3,建议精简")
-                tokens = {t.lower() for t in re.findall(r"[A-Za-z']+", en.replace("\u2019", "'"))}
+                if len(ws) > 5:
+                    warns.append(f"{tag}: words {len(ws)} 个 > 5,建议精简")
+                tokens = [t.lower() for t in re.findall(r"[A-Za-z']+", en.replace("\u2019", "'"))]
                 for j, w in enumerate(ws):
                     wtag = f"{tag} words[{j}]"
                     if not isinstance(w, dict) or not isinstance(w.get("w"), str) or not w["w"].strip():
                         errs.append(f"{wtag}: 缺 w 或非字符串")
                         continue
-                    if w["w"].replace("\u2019", "'").lower() not in tokens:
-                        errs.append(f"{wtag}: w '{w['w']}' 不在 en 中(必须表层形)")
+                    w_tokens = [t.lower() for t in re.findall(r"[A-Za-z']+", w["w"].replace("\u2019", "'"))]
+                    if not w_tokens:
+                        errs.append(f"{wtag}: w '{w['w']}' 不含有效词")
+                        continue
+                    if not _span_in(tokens, w_tokens):
+                        errs.append(f"{wtag}: w '{w['w']}' 不是 en 中的表层连续片段(单词/词组须与 en 一致)")
                     ph = w.get("phonetic")
                     if ph is not None and (not isinstance(ph, str) or not ph.strip()):
                         errs.append(f"{wtag}: phonetic 空串(删掉该键)")
@@ -269,7 +281,30 @@ def cmd_selftest(args):
                              {"start": 6.1, "end": 7.9, "en": "what is this"}]}
         js.write_text(json.dumps(bad, ensure_ascii=False), encoding="utf-8")
         errs, _ = check_pair(srt, js)
-        assert any("表层形" in e for e in errs) and any("斜杠" in e for e in errs), errs
+        assert any("表层连续片段" in e for e in errs) and any("斜杠" in e for e in errs), errs
+
+        # 词组(表层连续片段)应合法,且须与 en 连续一致(跳词/颠倒即拦)
+        srt2 = d / "02_词组.srt"
+        srt2.write_text(
+            "1\n00:00:00,000 --> 00:00:01,000\nhello boys and girls\n",
+            encoding="utf-8",
+        )
+        js2 = d / "02_词组.json"
+        ok_phrase = {"sentences": [
+            {"start": 0.0, "end": 1.0, "en": "hello boys and girls",
+             "words": [{"w": "boys and girls", "note": "男孩女孩们"}]},
+        ]}
+        js2.write_text(json.dumps(ok_phrase, ensure_ascii=False), encoding="utf-8")
+        errs, _ = check_pair(srt2, js2)
+        assert not errs, errs  # 词组合法
+
+        bad_phrase = {"sentences": [
+            {"start": 0.0, "end": 1.0, "en": "hello boys and girls",
+             "words": [{"w": "boys girls"}]},
+        ]}
+        js2.write_text(json.dumps(bad_phrase, ensure_ascii=False), encoding="utf-8")
+        errs, _ = check_pair(srt2, js2)
+        assert any("表层连续片段" in e for e in errs), errs  # 跳词不连续,应拦
     print("selftest OK")
 
 

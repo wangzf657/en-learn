@@ -36,7 +36,7 @@
         },
         "words": {
           "type": "array",
-          "description": "重点词,每句 0-3 个为宜",
+          "description": "教学条目:常用词组/短语或启蒙高频单字,每句 0-5 个为宜(软上限)",
           "items": { "$ref": "#/$defs/word" }
         },
         "note": {
@@ -47,20 +47,21 @@
     },
     "word": {
       "type": "object",
+      "description": "教学条目:单词或词组(短句/固定搭配)",
       "required": ["w"],
       "properties": {
         "w": {
           "type": "string",
-          "description": "表层形:与 en 中出现的拼写一致(含缩写、变形,不还原词干)——对齐跟读评分 word_scores[].word"
+          "description": "表层形:en 中出现的连续片段(单词或词组),照原样含缩写/变形与词组空格,不还原词干;供前端词块朗读与讲解"
         },
         "phonetic": {
           "type": "string",
           "pattern": "^[^/]*$",
-          "description": "美式 IPA 音标,裸串不含斜杠(前端渲染时自加 /…/)"
+          "description": "已废弃(不再生成);旧数据兼容。美式 IPA 音标,裸串不含斜杠(前端渲染时自加 /…/)"
         },
         "note": {
           "type": "string",
-          "description": "中文讲解,口语化短句"
+          "description": "中文讲解(词组含义/怎么说/何时用),口语化短句"
         }
       }
     }

@@ -51,19 +51,15 @@ describe('SubtitlePanel 朗读(TTS)', () => {
     expect(wrapper.find('.speak-btn').classes()).not.toContain('speaking')
   })
 
-  it('点击词块只朗读该词,不触发 seek', async () => {
+  it('不再渲染词块(详情收敛到练习弹窗)', () => {
     const wrapper = mountPanel()
-    await wrapper.find('.word-chip').trigger('click')
-
-    expect(utterances[0].text).toBe('hello')
-    expect(wrapper.emitted('seek')).toBeUndefined()
+    expect(wrapper.find('.word-chip').exists()).toBe(false)
   })
 
   it('无 speechSynthesis 时点击不报错', async () => {
     delete window.speechSynthesis
     const wrapper = mountPanel()
     await wrapper.find('.speak-btn').trigger('click')
-    await wrapper.find('.word-chip').trigger('click')
     expect(wrapper.find('.speak-btn').exists()).toBe(true)
   })
 

@@ -406,18 +406,32 @@ export default function mockApiPlugin() {
             if (m) reference = m[1]
           }
           const words = reference.match(/\b[\w']+\b/g) || ["Hello", "world"]
-          const wordScores = words.map((w, i) => ({
-            word: w,
-            accuracy_score: [82.5, 78, 90][i % 3],
-            expected_phonemes: i % 2 === 0 ? "h ə l oʊ" : "w ɜːr l d",
-            actual_phonemes: i % 2 === 0 ? "h ə l oʊ" : "w ə l d",
-            phoneme_scores: [80, 85, 90].slice(0, Math.max(1, w.length % 3 + 1)),
-          }))
+          const phonemeSets = [
+            { text: ["h", "ə", "l", "oʊ"], score: [85, 88, 80, 90] },
+            { text: ["w", "ɜːr", "l", "d"], score: [70, 55, 80, 60] },
+          ]
+          const wordScores = words.map((w, i) => {
+            const set = phonemeSets[i % phonemeSets.length]
+            const isBad = i === 1 // 第二个词演示「错词」低分 + 重音错
+            return {
+              word: w,
+              accuracy_score: isBad ? 45 : 88,
+              expected_phonemes: set.text.join(" "),
+              actual_phonemes: set.text.join(""),
+              phoneme_scores: set.score,
+              phonemes: set.text,
+              type: isBad ? 3 : 2,
+              stress: isBad ? 0 : 1,
+            }
+          })
           return sendJson(res, 200, {
             accuracy_score: 82.5,
             fluency_score: 78,
             completeness_score: 90,
             word_scores: wordScores,
+            sample: reference,
+            usertext: reference,
+            audio_quality: { volume: false, clipping: false, noise: true, cut: false, too_short: false, empty_audio: false },
           })
         }
 

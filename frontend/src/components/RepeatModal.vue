@@ -24,6 +24,16 @@ let alive = true
 const defaultText = computed(() => props.sentence?.en || '')
 const reference = computed(() => customText.value.trim() || defaultText.value)
 
+// 把整句按常用标点切成独立断句(保留标点),用于逐句朗读 + 选中快速填入
+const segments = computed(() => {
+  const text = (defaultText.value || '').trim()
+  if (!text) return []
+  return text
+    .split(/(?<=[.,!?;:…—])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+})
+
 // 正在朗读的条目:'sentence' | 'words' | 'custom' | null
 const speakingKey = ref(null)
 
@@ -44,9 +54,72 @@ function wordScoreClass(score) {
   return 'word-bad'
 }
 
-function restoreSentence() {
-  customText.value = defaultText.value
+// 综合分 → 等级标签 + 颜色档
+const levelLabel = computed(() => {
+  const s = overallScore.value
+  if (s >= 90) return '优秀'
+  if (s >= 80) return '良好'
+  if (s >= 70) return '一般'
+  if (s >= 60) return '及格'
+  return '待加强'
+})
+
+const levelClass = computed(() => {
+  const s = overallScore.value
+  if (s >= 90) return 'lvl-excellent'
+  if (s >= 80) return 'lvl-good'
+  if (s >= 70) return 'lvl-ok'
+  if (s >= 60) return 'lvl-pass'
+  return 'lvl-bad'
+})
+
+function barWidth(v) {
+  if (v == null) return '0%'
+  return `${Math.min(100, Math.max(0, v))}%`
 }
+
+// 词类型徽章:0 多词 / 1 漏词 / 3 错词(2 正常不展示)
+const WORD_TYPE_BADGES = {
+  0: { label: '多词', cls: 'ws-extra' },
+  1: { label: '漏词', cls: 'ws-miss' },
+  3: { label: '错词', cls: 'ws-wrong' },
+}
+
+function wordTypeBadge(ws) {
+  return WORD_TYPE_BADGES[ws.type] || null
+}
+
+function hasStress(ws) {
+  return typeof ws.stress === 'number' && ws.stress >= 0
+}
+
+// 逐词音素:优先用 phonemes(与 phoneme_scores 对齐);退化到 actual_phonemes 整串
+function wordPhonemes(ws) {
+  if (Array.isArray(ws.phonemes) && ws.phonemes.length) return ws.phonemes
+  const ap = ws.actual_phonemes || ''
+  return ap ? [ap] : []
+}
+
+function phoneClass(score) {
+  if (score >= 80) return 'ph-good'
+  if (score >= 60) return 'ph-ok'
+  return 'ph-bad'
+}
+
+const QUALITY_ISSUES = [
+  ['volume', '音量偏小'],
+  ['clipping', '削波'],
+  ['noise', '有噪声'],
+  ['cut', '截断'],
+  ['too_short', '过短'],
+  ['empty_audio', '空音频'],
+]
+
+const qualityIssues = computed(() => {
+  const aq = result.value?.audio_quality
+  if (!aq) return []
+  return QUALITY_ISSUES.filter(([key]) => aq[key]).map(([, label]) => label)
+})
 
 /* ---------------- 朗读(TTS) ---------------- */
 
@@ -66,6 +139,8 @@ function makeUtterance(text, onDone) {
 // 台词区文本选中 → "填入"浮窗
 const selectionText = ref('')
 const selectionBox = ref(null)
+// 单选刚直接填入/朗读后,抑制紧接着的整句朗读(见 toggleSpeakSegment)
+const suppressSegmentRead = ref(false)
 
 const fillStyle = computed(() => {
   const box = selectionBox.value
@@ -134,6 +209,18 @@ function onTargetEnMouseUp(e) {
   // 让可视选区同步到完整单词
   sel.removeAllRanges()
   sel.addRange(range)
+
+  // 单个词:直接填入并朗读;多个词:弹出「填入」按钮
+  const wordCount = (text.match(/\b[\w']+\b/g) || []).length
+  if (wordCount <= 1) {
+    sel.removeAllRanges()
+    customText.value = text
+    speakText(text)
+    suppressSegmentRead.value = true
+    selectionText.value = ''
+    selectionBox.value = null
+    return
+  }
   const rect = range.getBoundingClientRect()
   selectionText.value = text
   selectionBox.value = { x: rect.left + rect.width / 2, y: rect.top }
@@ -183,6 +270,49 @@ function toggleSpeakWord(w, idx) {
   synth.cancel()
   speakingKey.value = key
   synth.speak(makeUtterance(w, () => {
+    if (speakingKey.value === key) speakingKey.value = null
+  }))
+}
+
+// 点词块:直接填入文本框并朗读
+function fillAndSpeakWord(w, idx) {
+  customText.value = w
+  toggleSpeakWord(w, idx)
+}
+
+// 一次性朗读文本(单选直接填入后跟读用)
+function speakText(text) {
+  if (!('speechSynthesis' in window) || !text) return
+  const synth = window.speechSynthesis
+  synth.cancel()
+  speakingKey.value = 'selection'
+  synth.speak(makeUtterance(text, () => {
+    if (speakingKey.value === 'selection') speakingKey.value = null
+  }))
+}
+
+// 右侧台词框点击 → 把完整台词填回跟读框
+function fillFromSentence() {
+  customText.value = defaultText.value
+}
+
+// 点单个断句朗读该段,再点一次停止;刚选中文字待填入时不朗读
+function toggleSpeakSegment(i) {
+  const seg = segments.value[i]
+  if (!seg) return
+  if (selectionText.value) return
+  // 刚用单选直接填入并朗读过,抑制这次点击引起的整句朗读
+  if (suppressSegmentRead.value) {
+    suppressSegmentRead.value = false
+    return
+  }
+  const key = `seg-${i}`
+  if (speakingKey.value === key) return stopSpeaking()
+  if (!('speechSynthesis' in window)) return
+  const synth = window.speechSynthesis
+  synth.cancel()
+  speakingKey.value = key
+  synth.speak(makeUtterance(seg, () => {
     if (speakingKey.value === key) speakingKey.value = null
   }))
 }
@@ -353,55 +483,64 @@ function close() {
         </header>
 
         <div class='repeat-body'>
-          <!-- 台词 + 关键词 左右排列,固定高度(约两个关键词高度) -->
+          <!-- 左 30% 学习(单词+拆分短句) + 右 70% 操作(台词+跟读+录音+评分) -->
           <div class='content-row'>
-            <div
-              class='target-section'
-              :class='{ speaking: speakingKey === "sentence" }'
-              role='button'
-              tabindex='0'
-              :title='speakingKey === "sentence" ? "停止朗读" : "点击朗读台词"'
-              :aria-label='speakingKey === "sentence" ? "停止朗读台词" : "朗读台词"'
-              @click='toggleSpeakSentence'
-              @keydown.enter.stop.prevent='toggleSpeakSentence'
-              @keydown.space.stop.prevent='toggleSpeakSentence'
-            >
-              <span class='target-speak-icon' aria-hidden='true'>
-                <svg v-if='speakingKey !== "sentence"' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
-                  <polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5'></polygon>
-                  <path d='M15.54 8.46a5 5 0 0 1 0 7.07'></path>
-                  <path d='M19.07 4.93a10 10 0 0 1 0 14.14'></path>
-                </svg>
-                <svg v-else width='14' height='14' viewBox='0 0 24 24' fill='currentColor'>
-                  <rect x='7' y='7' width='10' height='10' rx='2'></rect>
-                </svg>
-              </span>
-              <p class='target-en' @mouseup='onTargetEnMouseUp'>{{ defaultText }}</p>
-              <p v-if='sentence.zh' class='target-zh'>{{ sentence.zh }}</p>
-            </div>
+            <section class='material-section'>
+              <div v-if='sentence.words?.length' class='word-chips'>
+                <button
+                  v-for='(w, idx) in sentence.words'
+                  :key='idx'
+                  type='button'
+                  class='chip word-chip-btn'
+                  :class='{ speaking: speakingKey === `w-${idx}` }'
+                  :title='`点按填入并播放 ${w.w}`'
+                  @click='fillAndSpeakWord(w.w, idx)'
+                >
+                  <span class='wc-w'>
+                    {{ w.w }}
+                    <svg class='speak-hint' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>
+                      <polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5'></polygon>
+                      <path d='M15.54 8.46a5 5 0 0 1 0 7.07'></path>
+                    </svg>
+                  </span>
+                  <span v-if='w.note' class='wc-note'>{{ w.note }}</span>
+                </button>
+              </div>
 
-            <div v-if='sentence.words?.length' class='word-chips'>
-              <button
-                v-for='(w, idx) in sentence.words'
-                :key='idx'
-                type='button'
-                class='chip word-chip-btn'
-                :class='{ speaking: speakingKey === `w-${idx}` }'
-                :title='`点击播放 ${w.w}`'
-                @click='toggleSpeakWord(w.w, idx)'
-              >
-                <span class='wc-w'>
-                  {{ w.w }}
-                  <svg class='speak-hint' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>
+              <div class='segment-list' @mousedown='suppressSegmentRead = false' @mouseup='onTargetEnMouseUp'>
+                <div
+                  v-for='(seg, i) in segments'
+                  :key='i'
+                  class='segment'
+                  :class='{ speaking: speakingKey === `seg-${i}` }'
+                  @click='toggleSpeakSegment(i)'
+                >
+                  <p class='segment-en'>{{ seg }}</p>
+                </div>
+              </div>
+            </section>
+
+            <section class='action-section'>
+              <div class='sentence-line' :class='{ speaking: speakingKey === "sentence" }' @click='fillFromSentence'>
+                <button
+                  class='target-speak-btn'
+                  type='button'
+                  :title='speakingKey === "sentence" ? "停止朗读整句" : "朗读整句"'
+                  :aria-label='speakingKey === "sentence" ? "停止朗读整句" : "朗读整句"'
+                  @click.stop='toggleSpeakSentence'
+                >
+                  <svg v-if='speakingKey !== "sentence"' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
                     <polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5'></polygon>
                     <path d='M15.54 8.46a5 5 0 0 1 0 7.07'></path>
+                    <path d='M19.07 4.93a10 10 0 0 1 0 14.14'></path>
                   </svg>
-                </span>
-                <span v-if='w.phonetic' class='wc-phonetic'>/{{ w.phonetic }}/</span>
-                <span v-if='w.note' class='wc-note'>{{ w.note }}</span>
-              </button>
-            </div>
-          </div>
+                  <svg v-else width='14' height='14' viewBox='0 0 24 24' fill='currentColor'>
+                    <rect x='7' y='7' width='10' height='10' rx='2'></rect>
+                  </svg>
+                </button>
+                <p class='sentence-text'>{{ defaultText }}</p>
+                <p v-if='sentence.zh' class='target-zh'>{{ sentence.zh }}</p>
+              </div>
 
           <div class='custom-input'>
             <label for='repeat-custom'>跟读文本</label>
@@ -412,12 +551,6 @@ function close() {
               placeholder='输入想跟读的内容'
               @keydown.space.stop
             />
-            <button
-              v-if='customText.trim() !== defaultText.trim()'
-              type='button'
-              class='restore-btn'
-              @click='restoreSentence'
-            >恢复</button>
             <button
               type='button'
               class='speak-custom-btn'
@@ -439,94 +572,145 @@ function close() {
           </div>
 
           <div class='record-area'>
-            <button
-              class='record-btn'
-              type='button'
-              :class='{ recording: status === "recording", scoring: status === "scoring" }'
-              :disabled='status === "scoring"'
-              @click='toggleRecording'
-            >
-              <span v-if='status === "scoring"' class='spinner'></span>
-              <span v-else-if='status === "recording"' class='rec-dot'></span>
-              <svg v-else width='22' height='22' viewBox='0 0 24 24' fill='currentColor'>
-                <path d='M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z'/>
-                <path d='M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z'/>
-              </svg>
-              <span class='record-label'>
-                {{ status === 'recording' ? '点击停止' : status === 'scoring' ? '评分中…' : status === 'starting' ? '准备中…' : '点击开始录音' }}
-              </span>
-            </button>
+            <div class='record-row'>
+              <button
+                class='record-btn'
+                type='button'
+                :class='{ recording: status === "recording", scoring: status === "scoring" }'
+                :disabled='status === "scoring"'
+                @click='toggleRecording'
+              >
+                <span v-if='status === "scoring"' class='spinner'></span>
+                <span v-else-if='status === "recording"' class='rec-dot'></span>
+                <svg v-else width='22' height='22' viewBox='0 0 24 24' fill='currentColor'>
+                  <path d='M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z'/>
+                  <path d='M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z'/>
+                </svg>
+                <span class='record-label'>
+                  {{ status === 'recording' ? '点击停止' : status === 'scoring' ? '评分中…' : status === 'starting' ? '准备中…' : '点击开始录音' }}
+                </span>
+              </button>
+
+              <button
+                v-if='recordedUrl'
+                type='button'
+                class='playback-btn'
+                :class='{ playing: playingRecording }'
+                :title='playingRecording ? "停止回放" : "听我刚才录的音"'
+                @click='togglePlayback'
+              >
+                <svg v-if='playingRecording' width='14' height='14' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'>
+                  <rect x='6' y='5' width='4' height='14' rx='1'></rect>
+                  <rect x='14' y='5' width='4' height='14' rx='1'></rect>
+                </svg>
+                <svg v-else width='14' height='14' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'>
+                  <path d='M8 5v14l11-7z'></path>
+                </svg>
+                <span>{{ playingRecording ? '停止' : '回放' }}</span>
+              </button>
+              <audio
+                ref='audioEl'
+                class='playback-audio'
+                :src='recordedUrl'
+                preload='metadata'
+                @play='playingRecording = true'
+                @pause='playingRecording = false'
+                @ended='playingRecording = false'
+                @error='playingRecording = false'
+              ></audio>
+            </div>
             <p class='record-hint'>按空格或点击按钮开始,再按一次结束</p>
           </div>
 
           <div v-if='status === "error"' class='error-detail'>{{ error }}</div>
 
           <div v-if='status === "result" && result' class='score-result'>
-            <div class='score-top'>
-              <div class='score-stars'>
-                <svg
-                  v-for='(filled, i) in stars'
-                  :key='i'
-                  class='star'
-                  :style='{ "--i": i }'
-                  width='20'
-                  height='20'
-                  viewBox='0 0 24 24'
-                  :fill='filled ? "currentColor" : "none"'
-                  :stroke='filled ? "none" : "currentColor"'
-                  stroke-width='2'
-                >
-                  <path d='M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z'/>
-                </svg>
+            <div class='score-hero'>
+              <div class='score-number'>
+                {{ overallScore }}<span class='score-unit'>分</span>
               </div>
-              <div class='score-number'>{{ overallScore }}<span class='score-unit'>分</span></div>
-              <div class='score-pills'>
-                <span class='pill pill-blue'>准 {{ Math.round(result.accuracy_score) }}</span>
-                <span class='pill pill-green'>流 {{ Math.round(result.fluency_score) }}</span>
-                <span class='pill pill-orange'>完 {{ Math.round(result.completeness_score) }}</span>
+              <div class='score-hero-side'>
+                <div class='score-stars'>
+                  <svg
+                    v-for='(filled, i) in stars'
+                    :key='i'
+                    class='star'
+                    :style='{ "--i": i }'
+                    width='28'
+                    height='28'
+                    viewBox='0 0 24 24'
+                    :fill='filled ? "currentColor" : "none"'
+                    :stroke='filled ? "none" : "currentColor"'
+                    stroke-width='2'
+                  >
+                    <path d='M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z'/>
+                  </svg>
+                </div>
+                <span :class='["score-level", levelClass]'>{{ levelLabel }}</span>
               </div>
             </div>
-            <div class='score-bottom'>
-              <div class='word-scores'>
-                <span
-                  v-for='(ws, k) in result.word_scores'
-                  :key='k'
-                  :class='["ws-word", wordScoreClass(ws.accuracy_score)]'
-                  :title='`分数: ${Math.round(ws.accuracy_score)}\n预期音素: ${ws.expected_phonemes || "-"}\n实际音素: ${ws.actual_phonemes || "-"}`'
-                >
+
+            <div class='score-dims'>
+              <div class='dim'>
+                <span class='dim-label'>准 {{ Math.round(result.accuracy_score) }}</span>
+                <div class='dim-bar'><span class='dim-fill fill-blue' :style='{ width: barWidth(result.accuracy_score) }'></span></div>
+              </div>
+              <div class='dim'>
+                <span class='dim-label'>流 {{ Math.round(result.fluency_score) }}</span>
+                <div class='dim-bar'><span class='dim-fill fill-green' :style='{ width: barWidth(result.fluency_score) }'></span></div>
+              </div>
+              <div class='dim'>
+                <span class='dim-label'>完 {{ Math.round(result.completeness_score) }}</span>
+                <div class='dim-bar'><span class='dim-fill fill-orange' :style='{ width: barWidth(result.completeness_score) }'></span></div>
+              </div>
+            </div>
+
+            <div v-if='result.sample || result.usertext' class='score-asr'>
+              <div class='asr-row'>
+                <span class='asr-tag asr-std'>标准</span>
+                <span class='asr-text'>{{ result.sample || reference }}</span>
+              </div>
+              <div class='asr-row'>
+                <span class='asr-tag asr-you'>你读</span>
+                <span class='asr-text' :class='{ "asr-none": !result.usertext }'>{{ result.usertext || '未识别到人声' }}</span>
+              </div>
+            </div>
+
+            <div class='score-footer'>
+              <div v-if='qualityIssues.length' class='score-quality'>
+                <span class='q-title'>音质</span>
+                <span v-for='(q, i) in qualityIssues' :key='i' class='q-badge'>{{ q }}</span>
+              </div>
+              <div v-else class='score-quality'>
+                <span class='q-title'>音质</span>
+                <span class='q-ok'>良好</span>
+              </div>
+            </div>
+
+            <div class='word-detail'>
+              <div
+                v-for='(ws, k) in result.word_scores'
+                :key='k'
+                class='ws-row'
+              >
+                <span :class='["ws-word", wordScoreClass(ws.accuracy_score)]'>
                   {{ ws.word }}
+                  <span v-if='wordTypeBadge(ws)' :class='["ws-badge", wordTypeBadge(ws).cls]'>{{ wordTypeBadge(ws).label }}</span>
+                </span>
+                <span v-if='hasStress(ws)' :class='["ws-stress", ws.stress === 1 ? "stress-ok" : "stress-bad"]'>
+                  {{ ws.stress === 1 ? '重音✓' : '重音✗' }}
+                </span>
+                <span v-if='wordPhonemes(ws).length' class='ws-phonemes'>
+                  <span
+                    v-for='(p, pi) in wordPhonemes(ws)'
+                    :key='pi'
+                    :class='["ph", phoneClass(ws.phoneme_scores[pi])]'
+                  >{{ p }}</span>
                 </span>
               </div>
-
-              <div v-if='recordedUrl' class='playback'>
-                <button
-                  type='button'
-                  class='playback-btn'
-                  :class='{ playing: playingRecording }'
-                  :title='playingRecording ? "停止回放" : "听我刚才录的音"'
-                  @click='togglePlayback'
-                >
-                  <svg v-if='playingRecording' width='14' height='14' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'>
-                    <rect x='6' y='5' width='4' height='14' rx='1'></rect>
-                    <rect x='14' y='5' width='4' height='14' rx='1'></rect>
-                  </svg>
-                  <svg v-else width='14' height='14' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'>
-                    <path d='M8 5v14l11-7z'></path>
-                  </svg>
-                  <span>{{ playingRecording ? '停止' : '回放' }}</span>
-                </button>
-                <audio
-                  ref='audioEl'
-                  class='playback-audio'
-                  :src='recordedUrl'
-                  preload='metadata'
-                  @play='playingRecording = true'
-                  @pause='playingRecording = false'
-                  @ended='playingRecording = false'
-                  @error='playingRecording = false'
-                ></audio>
-              </div>
             </div>
+          </div>
+            </section>
           </div>
         </div>
       </div>
@@ -565,8 +749,8 @@ function close() {
 
 .repeat-card {
   width: 100%;
-  max-width: 1000px;
-  max-height: calc(100svh - 32px);
+  max-width: 1200px;
+  height: min(880px, calc(100svh - 32px));
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -620,78 +804,133 @@ function close() {
   overflow: hidden;
 }
 
-/* ---------- 台词 + 关键词 行(固定高度 ≈ 两个关键词高度) ---------- */
+/* ---------- 左 30% 学习区 + 右 70% 操作区 ---------- */
 .content-row {
   display: flex;
   gap: 12px;
-  flex: none;
-  height: 132px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
-/* 台词区:75%,可点击朗读,内容超出滚动 */
-.target-section {
-  position: relative;
-  flex: 0 0 75%;
+/* 左 30%:单词 + 拆分短句,固定高度内部滚动 + 快速填入 */
+.material-section {
+  flex: 0 0 30%;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  text-align: center;
-  padding: 12px 16px 12px 16px;
+  gap: 12px;
+  padding: 12px 16px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(180deg, var(--cyan-bg), var(--blue-bg));
-  border: 2px dashed rgba(63, 140, 255, 0.35);
-  cursor: pointer;
+  background: linear-gradient(180deg, var(--yellow-bg), var(--pink-bg));
+  border: 2px dashed rgba(255, 143, 171, 0.4);
   overflow-y: auto;
   overflow-x: hidden;
-  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
 }
 
-.target-section:hover {
-  border-color: var(--blue);
+/* 右 70%:台词原内容 + 跟读 + 录音 + 评分,固定高度不滚动 */
+.action-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.target-section.speaking {
+/* 右侧整句台词 + 右上角播放按钮 */
+.sentence-line {
+  position: relative;
+  flex: none;
+  padding: 12px 16px 12px 44px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, var(--yellow-bg), var(--pink-bg));
+  border: 2px dashed rgba(255, 143, 171, 0.4);
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.sentence-line.speaking {
   background: var(--grad-blue);
   border-color: transparent;
-  color: #fff;
-  animation: speak-ring 1.1s ease-in-out infinite;
 }
 
-.target-section.speaking .target-en,
-.target-section.speaking .target-zh {
-  color: #fff;
-}
-
-.target-speak-icon {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  display: inline-flex;
-  color: var(--blue);
-  opacity: 0.65;
-}
-
-.target-section.speaking .target-speak-icon {
-  color: #fff;
-  opacity: 1;
-}
-
-.target-en {
+.sentence-text {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
-  line-height: 1.3;
-  margin: 0 0 4px;
+  line-height: 1.4;
+  margin: 0;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.sentence-line.speaking .sentence-text,
+.sentence-line.speaking .target-zh {
+  color: #fff;
+}
+
+/* 右上角播放按钮:整句朗读只由这里触发 */
+.target-speak-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--pink);
+  background: #fff;
+  border: 2px solid transparent;
+  box-shadow: var(--shadow-pop);
+  transition: background var(--transition), color var(--transition),
+    transform var(--transition), border-color var(--transition);
+}
+
+.target-speak-btn:hover {
+  border-color: var(--pink);
+  transform: translateY(-1px);
+}
+
+.sentence-line.speaking .target-speak-btn {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  border-color: transparent;
+}
+
+/* 断句列表:纵向排列,可单独点读 / 选中填入 */
+.segment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.segment {
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.segment-en {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0;
   color: var(--ink);
   word-break: break-word;
   user-select: text;
   cursor: text;
 }
 
+.segment.speaking .segment-en {
+  color: var(--blue);
+}
+
 .target-zh {
   font-size: 14px;
   color: var(--muted);
-  margin: 0;
+  margin: 4px 0 0;
   line-height: 1.4;
 }
 
@@ -718,15 +957,12 @@ function close() {
   transform: translate(-50%, -100%) translateY(-2px);
 }
 
-/* 关键词区:25%,纵向滚动 */
+/* 关键词区:位于左列学习区内,纵向排列 */
 .word-chips {
-  flex: 1;
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 2px;
 }
 
 .word-chip-btn {
@@ -781,13 +1017,6 @@ function close() {
   transform: none;
 }
 
-.wc-phonetic {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--purple);
-  line-height: 1.2;
-}
-
 .wc-note {
   font-size: 12px;
   line-height: 1.3;
@@ -815,20 +1044,6 @@ function close() {
   min-height: 40px;
   padding: 8px 12px;
   font-size: 14px;
-}
-
-.restore-btn {
-  flex: none;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--blue);
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-  transition: background var(--transition), color var(--transition);
-}
-
-.restore-btn:hover {
-  background: var(--blue-bg);
 }
 
 .speak-custom-btn {
@@ -875,9 +1090,16 @@ function close() {
   flex: none;
 }
 
+.record-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+}
+
 .record-btn {
   position: relative;
-  width: 100%;
+  flex: 1;
   height: 52px;
   border-radius: var(--radius-pill);
   display: inline-flex;
@@ -949,7 +1171,7 @@ function close() {
   animation: spin 0.8s linear infinite;
 }
 
-/* ---------- 评分区(固定高度,内容内部滚动) ---------- */
+/* ---------- 评分区(核心系统,富反馈) ---------- */
 .score-result {
   flex: 1;
   min-height: 0;
@@ -958,17 +1180,27 @@ function close() {
   gap: 10px;
   padding: 14px 16px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(180deg, var(--yellow-bg), var(--orange-bg));
+  background: linear-gradient(160deg, var(--yellow-bg), var(--orange-bg) 60%, var(--pink-bg));
   border: 2px solid rgba(255, 159, 69, 0.35);
+  box-shadow: var(--shadow-sm);
   animation: pop-in 480ms var(--ease-bounce) backwards;
   overflow: hidden;
 }
 
-.score-top {
+/* 头部:总分 + 星级/等级 */
+.score-hero {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 14px;
   flex: none;
+}
+
+.score-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
 }
 
 .score-stars {
@@ -985,41 +1217,160 @@ function close() {
 
 .score-number {
   font-family: var(--font-display);
-  font-size: 34px;
-  font-weight: 700;
+  font-size: 64px;
+  font-weight: 800;
   line-height: 1;
   color: var(--orange-ink);
-  animation: pop-in 460ms var(--ease-bounce) backwards;
-  animation-delay: 640ms;
+  text-shadow:
+    0 0 14px rgba(255, 170, 60, 0.65),
+    0 0 34px rgba(255, 159, 69, 0.4);
+  animation:
+    score-pop 560ms var(--ease-bounce) backwards,
+    score-glow 1.8s ease-in-out 560ms infinite;
 }
 
 .score-unit {
-  font-size: 16px;
-  margin-left: 2px;
+  font-size: 22px;
+  margin-left: 3px;
 }
 
-.score-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.score-level {
+  padding: 3px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: var(--shadow-pop);
 }
 
-.score-bottom {
-  flex: 1;
-  min-height: 0;
+.lvl-excellent { background: linear-gradient(180deg, #ffcf3f, var(--orange)); }
+.lvl-good { background: linear-gradient(180deg, #63e39b, var(--green)); }
+.lvl-ok { background: linear-gradient(180deg, #63a5ff, var(--blue)); }
+.lvl-pass { background: linear-gradient(180deg, #b98bff, var(--purple)); }
+.lvl-bad { background: linear-gradient(180deg, #ff8089, var(--red)); }
+
+/* 三维度进度条(准/流/完) */
+.score-dims {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  flex: none;
+}
+
+.dim {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  overflow-y: auto;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 159, 69, 0.22);
 }
 
-.word-scores {
-  justify-content: flex-start;
+.dim-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
 }
 
-.playback {
+.dim-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(43, 37, 69, 0.08);
+  overflow: hidden;
+}
+
+.dim-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  animation: grow-bar 700ms var(--ease-soft) backwards;
+}
+
+.fill-blue { background: linear-gradient(90deg, var(--blue), #63a5ff); }
+.fill-green { background: linear-gradient(90deg, #2fca77, #63e39b); }
+.fill-orange { background: linear-gradient(90deg, var(--orange), #ffc07a); }
+
+/* ASR 识别对比:标准 vs 你读 */
+.score-asr {
+  flex: none;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: var(--radius-xs);
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 159, 69, 0.22);
+}
+
+.asr-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.asr-tag {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.asr-std { background: var(--blue-bg); color: var(--blue); }
+.asr-you { background: var(--pink-bg); color: #c93a83; }
+
+.asr-text {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.asr-none {
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* 底部:音质 */
+.score-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.score-quality {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.q-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.q-badge {
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--red-bg);
+  color: #c93a48;
+}
+
+.q-ok {
+  font-size: 12px;
+  font-weight: 700;
+  color: #17914f;
 }
 
 .playback-audio {
@@ -1029,8 +1380,10 @@ function close() {
 .playback-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  min-height: 38px;
+  flex: none;
+  min-height: 52px;
   padding: 8px 18px;
   border-radius: var(--radius-pill);
   font-family: var(--font-display);
@@ -1063,6 +1416,94 @@ function close() {
     box-shadow: 0 0 0 6px rgba(160, 107, 255, 0), var(--shadow-pop);
   }
 }
+
+@keyframes grow-bar {
+  from { width: 0; }
+}
+
+@keyframes score-pop {
+  0% { transform: scale(0.45); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+@keyframes score-glow {
+  0%, 100% {
+    text-shadow:
+      0 0 14px rgba(255, 170, 60, 0.55),
+      0 0 34px rgba(255, 159, 69, 0.35);
+  }
+  50% {
+    text-shadow:
+      0 0 22px rgba(255, 170, 60, 0.9),
+      0 0 52px rgba(255, 159, 69, 0.65);
+  }
+}
+
+/* 逐词详情(可滚动) */
+.word-detail {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 4px 2px 0;
+  overflow-y: auto;
+}
+
+.ws-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ws-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-badge {
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.ws-extra { background: var(--purple-bg); color: #7b3fe0; }
+.ws-miss { background: var(--red-bg); color: #c93a48; }
+.ws-wrong { background: var(--pink-bg); color: #c93a83; }
+
+.ws-stress {
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.stress-ok { background: var(--green-bg); color: #17914f; }
+.stress-bad { background: var(--orange-bg); color: var(--orange-ink); }
+
+.ws-phonemes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.ph {
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ph-good { background: var(--green-bg); color: #17914f; }
+.ph-ok { background: var(--yellow-bg); color: var(--amber-ink); }
+.ph-bad { background: var(--red-bg); color: #c93a48; }
 
 @keyframes speak-ring {
   0%, 100% {
@@ -1108,19 +1549,11 @@ function close() {
   .repeat-header h3 {
     font-size: 18px;
   }
-  .content-row {
-    flex-direction: column;
-    height: auto;
-  }
-  .target-section {
-    flex: none;
-    min-height: 90px;
-  }
-  .target-en {
-    font-size: 20px;
+  .segment-en {
+    font-size: 18px;
   }
   .word-chips {
-    max-height: 110px;
+    min-width: 0;
   }
 }
 </style>

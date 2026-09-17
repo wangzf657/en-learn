@@ -12,7 +12,7 @@ const props = defineProps({
 const emit = defineEmits(['seek'])
 const root = ref(null)
 
-// 正在朗读的条目 key(台词 `s-0` / 词块 `w-0-1`),null 表示空闲
+// 正在朗读的条目 key(台词 `s-0`),null 表示空闲
 const speakingKey = ref(null)
 
 function stopSpeaking() {
@@ -91,27 +91,6 @@ watch(
             </button>
           </div>
           <p v-if="s.zh" class="zh">{{ s.zh }}</p>
-        </div>
-
-        <div v-if="s.words?.length" class="words">
-          <div
-            v-for="(w, j) in s.words"
-            :key="j"
-            class="word-chip"
-            :class="{ speaking: speakingKey === `w-${i}-${j}` }"
-            :title="`点击朗读 ${w.w}`"
-            @click.stop="toggleSpeak(w.w, `w-${i}-${j}`)"
-          >
-            <span class="w-row">
-              <span class="w">{{ w.w }}</span>
-              <svg class="speak-hint" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-              </svg>
-            </span>
-            <span v-if="w.phonetic" class="phonetic">/{{ w.phonetic }}/</span>
-            <span v-if="w.note" class="note">{{ w.note }}</span>
-          </div>
         </div>
 
         <slot name="actions" :s="s" :i="i" />
@@ -258,74 +237,6 @@ watch(
   font-size: 14px;
   color: var(--muted);
   margin: 0;
-}
-
-.words {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.word-chip {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 12px;
-  border-radius: var(--radius-xs);
-  background: var(--purple-bg);
-  border: 2px solid transparent;
-  font-size: 16px;
-  cursor: pointer;
-  transition: transform var(--transition), border-color var(--transition),
-    background var(--transition);
-}
-
-.word-chip:hover {
-  transform: translateY(-2px) rotate(-1deg);
-  border-color: rgba(160, 107, 255, 0.45);
-}
-
-.word-chip.speaking {
-  border-color: var(--purple);
-  background: #fff;
-}
-
-.word-chip .w-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.word-chip .speak-hint {
-  flex: none;
-  color: var(--purple);
-  opacity: 0;
-  transform: translateX(-3px);
-  transition: opacity var(--transition), transform var(--transition);
-}
-
-.word-chip:hover .speak-hint,
-.word-chip.speaking .speak-hint {
-  opacity: 0.8;
-  transform: none;
-}
-
-.word-chip .w {
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.word-chip .phonetic {
-  font-family: var(--font-mono);
-  color: var(--purple);
-  font-size: 13px;
-}
-
-.word-chip .note {
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.4;
 }
 
 @media (max-width: 1024px) {

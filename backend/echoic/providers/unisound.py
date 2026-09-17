@@ -20,7 +20,7 @@ import uuid
 
 import requests
 
-from ..schemas import ScoringResult, WordScore
+from ..schemas import AudioQuality, ScoringResult, WordScore
 from .base import ScoringProvider
 
 DEFAULT_BASE_URL = "http://edu.hivoice.cn/eval"
@@ -45,6 +45,46 @@ _ERRCODES = {
 }
 
 
+# audiocheck 常见 key(去符号小写后) → 归一字段;值 10 表示有问题
+_AUDIO_FLAGS = {
+    "volume": ("volume",),
+    "clipping": ("clipping", "clip"),
+    "noise": ("noise",),
+    "cut": ("cut",),
+    "too_short": ("tooshort", "short"),
+    "empty_audio": ("emptyaudio", "empty"),
+}
+
+
+def _parse_stress(value) -> int:
+    """重音标记:0错 1对;缺省/异常记 -1(未知)。"""
+    if value is None:
+        return -1
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return -1
+
+
+def _parse_audio_quality(payload: dict) -> AudioQuality | None:
+    """audiocheck → AudioQuality;兼容列表/单对象两种形态,容忍大小写差异。"""
+    ac = payload.get("audiocheck")
+    if not ac:
+        return None
+    items = ac if isinstance(ac, list) else [ac]
+    flags: dict[str, bool] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for key, value in item.items():
+            norm = "".join(ch for ch in str(key).lower() if ch.isalnum())
+            problem = value in (10, "10", 1, "1", True)
+            for field, needles in _AUDIO_FLAGS.items():
+                if any(n in norm for n in needles):
+                    flags[field] = problem
+    return AudioQuality(**flags) if flags else None
+
+
 def _parse_response(payload: dict) -> ScoringResult:
     """官方响应 JSON → ScoringResult;多行文本按行取均值。"""
     lines = payload.get("lines") or []
@@ -55,20 +95,34 @@ def _parse_response(payload: dict) -> ScoringResult:
         vals = [ln[key] for ln in lines if isinstance(ln.get(key), (int, float))]
         return sum(vals) / len(vals) if vals else 0.0
 
+    sample = ""
+    usertext = ""
     word_scores: list[WordScore] = []
     for ln in lines:
+        if not sample and ln.get("sample"):
+            sample = str(ln["sample"])
+        if ln.get("usertext"):
+            ut = str(ln["usertext"]).strip()
+            if ut:
+                usertext = f"{usertext} {ut}".strip()
+
         for w in ln.get("words") or []:
-            # 词类型: 2 正常词 / 1 漏词(计 0 分);空格/标点/静音/多读等跳过
-            if w.get("type") not in (1, 2):
+            # 保留 0多词/1漏词/2正常/3错词;静音/重复/标点/生词不参与展示
+            wtype = w.get("type")
+            if wtype not in (0, 1, 2, 3):
                 continue
             subs = w.get("subwords") or []
+            phonemes = [str(s.get("subtext") or "") for s in subs]
             word_scores.append(
                 WordScore(
                     word=str(w.get("text") or ""),
                     accuracy_score=float(w.get("score") or 0) * 10,
                     expected_phonemes=str(w.get("phonetic") or ""),
-                    actual_phonemes="".join(str(s.get("subtext") or "") for s in subs),
+                    actual_phonemes="".join(phonemes),
                     phoneme_scores=[float(s.get("score") or 0) * 10 for s in subs],
+                    phonemes=phonemes,
+                    type=int(wtype),
+                    stress=_parse_stress(w.get("StressOfWord")),
                 )
             )
     return ScoringResult(
@@ -76,6 +130,9 @@ def _parse_response(payload: dict) -> ScoringResult:
         fluency_score=mean("fluency"),
         completeness_score=mean("integrity"),
         word_scores=word_scores,
+        sample=sample,
+        usertext=usertext,
+        audio_quality=_parse_audio_quality(payload),
     )
 
 
