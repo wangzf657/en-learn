@@ -115,6 +115,7 @@ const progressPercent = computed(() => {
 onMounted(() => {
   load()
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  window.addEventListener('keydown', onKeyDown)
 })
 
 async function load() {
@@ -159,6 +160,20 @@ function togglePlay() {
   if (!v) return
   if (v.paused) v.play()
   else v.pause()
+}
+
+function isEditableTarget(el) {
+  if (!el) return false
+  const tag = el.tagName
+  return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el.isContentEditable
+}
+
+// 空格键仅用于播放/暂停(弹窗打开或焦点在输入控件时除外)
+function onKeyDown(e) {
+  if (repeatOpen.value) return
+  if (e.code !== 'Space' || e.repeat || isEditableTarget(e.target)) return
+  e.preventDefault()
+  togglePlay()
 }
 
 function onTimeUpdate() {
@@ -259,6 +274,7 @@ onBeforeUnmount(() => {
   if (v) v.pause()
   window.removeEventListener('mousemove', onDrag)
   window.removeEventListener('mouseup', stopDrag)
+  window.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
 })
 </script>
@@ -336,15 +352,6 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="controls">
-          <button class="play-btn" @click="togglePlay" :aria-label="playing ? '暂停' : '播放'">
-            <svg v-if="playing" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
-            </svg>
-            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </button>
-
           <div class="progress-area">
             <div
               ref="progressEl"
@@ -357,6 +364,31 @@ onBeforeUnmount(() => {
             </div>
             <div class="time-row">
               <span class="time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
+            </div>
+          </div>
+
+          <div class="controls-bar">
+            <div class="controls-group">
+              <button class="play-btn" @click="togglePlay" :aria-label="playing ? '暂停' : '播放'">
+                <svg v-if="playing" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
+                <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </button>
+
+              <div class="volume-area">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path v-if="volume > 0" d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                  <path v-if="volume > 0.5" d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                </svg>
+                <input id="volume" type="range" min="0" max="1" step="0.05" v-model.number="volume" @input="setVolume" />
+              </div>
+            </div>
+
+            <div class="controls-group controls-extras">
               <select
                 class="rate-select"
                 :value="playbackRate"
@@ -366,58 +398,47 @@ onBeforeUnmount(() => {
               >
                 <option v-for="r in rates" :key="r" :value="r">{{ r }}×</option>
               </select>
+
+              <button
+                class="icon-btn drawer-toggle"
+                type="button"
+                :title="subtitleOpen ? '收起台词' : '展开台词'"
+                @click="toggleSubtitle"
+              >
+                <svg v-if="subtitleOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <path d="M9 3v18"/>
+                  <path d="M14 9l3 3-3 3"/>
+                </svg>
+                <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <path d="M15 3v18"/>
+                  <path d="M10 9l-3 3 3 3"/>
+                </svg>
+              </button>
+
+              <button
+                class="icon-btn fullscreen-btn"
+                type="button"
+                :title="isFullscreen ? '退出全屏' : '全屏'"
+                @click="toggleFullscreen"
+              >
+                <svg v-if="isFullscreen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 14v5a1 1 0 0 0 1 1h5"/>
+                  <path d="M20 14v5a1 1 0 0 1-1 1h-5"/>
+                  <path d="M15 4h5a1 1 0 0 1 1 1v5"/>
+                  <path d="M9 4H4a1 1 0 0 0-1 1v5"/>
+                </svg>
+                <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 3H3v5"/>
+                  <path d="M16 3h5v5"/>
+                  <path d="M21 16v5h-5"/>
+                  <path d="M3 16v5h5"/>
+                </svg>
+              </button>
+
+              <SubtitleStylePicker v-model="subtitleStyle" v-model:size="subtitleSize" />
             </div>
-          </div>
-
-          <div class="volume-area">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-              <path v-if="volume > 0" d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-              <path v-if="volume > 0.5" d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
-            </svg>
-            <input id="volume" type="range" min="0" max="1" step="0.05" v-model.number="volume" @input="setVolume" />
-          </div>
-
-          <div class="controls-extras">
-            <button
-              class="icon-btn drawer-toggle"
-              type="button"
-              :title="subtitleOpen ? '收起台词' : '展开台词'"
-              @click="toggleSubtitle"
-            >
-              <svg v-if="subtitleOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <path d="M9 3v18"/>
-                <path d="M14 9l3 3-3 3"/>
-              </svg>
-              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <path d="M15 3v18"/>
-                <path d="M10 9l-3 3 3 3"/>
-              </svg>
-            </button>
-
-            <button
-              class="icon-btn fullscreen-btn"
-              type="button"
-              :title="isFullscreen ? '退出全屏' : '全屏'"
-              @click="toggleFullscreen"
-            >
-              <svg v-if="isFullscreen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 14v5a1 1 0 0 0 1 1h5"/>
-                <path d="M20 14v5a1 1 0 0 1-1 1h-5"/>
-                <path d="M15 4h5a1 1 0 0 1 1 1v5"/>
-                <path d="M9 4H4a1 1 0 0 0-1 1v5"/>
-              </svg>
-              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M8 3H3v5"/>
-                <path d="M16 3h5v5"/>
-                <path d="M21 16v5h-5"/>
-                <path d="M3 16v5h5"/>
-              </svg>
-            </button>
-
-            <SubtitleStylePicker v-model="subtitleStyle" v-model:size="subtitleSize" />
           </div>
         </div>
       </section>
@@ -598,10 +619,23 @@ video {
 
 .controls {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 14px;
   padding: 16px 20px;
   background: linear-gradient(180deg, var(--card), var(--bg));
+}
+
+.controls-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.controls-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .play-btn {
@@ -629,8 +663,7 @@ video {
 }
 
 .progress-area {
-  flex: 1 1 auto;
-  min-width: 0;
+  width: 100%;
 }
 
 .progress-track {
@@ -722,9 +755,6 @@ video {
 }
 
 .controls-extras {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
   gap: 8px;
 }
 
@@ -845,13 +875,14 @@ video {
 }
 
 @media (max-width: 640px) {
-  .controls {
+  .controls-bar {
     flex-wrap: wrap;
-    gap: 12px;
+  }
+  .controls-group {
+    flex-wrap: wrap;
   }
   .volume-area {
-    width: 100%;
-    justify-content: flex-end;
+    flex: 1;
   }
   .title-group {
     width: 100%;

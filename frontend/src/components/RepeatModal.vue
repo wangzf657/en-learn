@@ -136,108 +136,9 @@ function makeUtterance(text, onDone) {
   return utter
 }
 
-// 台词区文本选中 → "填入"浮窗
-const selectionText = ref('')
-const selectionBox = ref(null)
-// 单选刚直接填入/朗读后,抑制紧接着的整句朗读(见 toggleSpeakSegment)
-const suppressSegmentRead = ref(false)
-
-const fillStyle = computed(() => {
-  const box = selectionBox.value
-  if (!box) return {}
-  return { left: `${box.x}px`, top: `${box.y}px` }
-})
-
-// 单词字符(字母/数字/撇号/连字符),用于把选区扩展到整词,避免选中半个单词
-function isWordChar(ch) {
-  return typeof ch === 'string' && ch.length === 1 && /[A-Za-z0-9'’-]/.test(ch)
-}
-
-// 把选区起点/终点扩展到完整单词边界(英文台词是单文本节点)
-function expandRangeToWords(range) {
-  const sc = range.startContainer
-  const ec = range.endContainer
-  if (sc.nodeType !== Node.TEXT_NODE || ec.nodeType !== Node.TEXT_NODE || sc !== ec) {
-    return range
-  }
-  const text = sc.data
-  const clone = range.cloneRange()
-  let s = clone.startOffset
-  let e = clone.endOffset
-
-  // 起点:正落在单词字符上则左移到词首;落在词间空白则右移跳过前导空格
-  if (isWordChar(text[s])) {
-    while (s > 0 && isWordChar(text[s - 1])) s--
-  } else {
-    while (s < e && !isWordChar(text[s])) s++
-  }
-
-  // 终点:紧邻前一字符是单词字符则右移到词尾;否则左移跳过尾随空格
-  if (e > 0 && isWordChar(text[e - 1])) {
-    while (e < text.length && isWordChar(text[e])) e++
-  } else {
-    while (e > s && !isWordChar(text[e - 1])) e--
-  }
-
-  clone.setStart(sc, s)
-  clone.setEnd(ec, e)
-  return clone
-}
-
-function onTargetEnMouseUp(e) {
-  const el = e.currentTarget
-  const sel = window.getSelection?.()
-  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-    selectionText.value = ''
-    selectionBox.value = null
-    return
-  }
-  const raw = sel.getRangeAt(0)
-  // 只认完整落在英文台词内的选区,避免把中文翻译填进跟读框
-  if (!el.contains(raw.commonAncestorContainer)) {
-    selectionText.value = ''
-    selectionBox.value = null
-    return
-  }
-  const range = expandRangeToWords(raw)
-  const text = range.toString().trim()
-  if (!text) {
-    selectionText.value = ''
-    selectionBox.value = null
-    return
-  }
-  // 让可视选区同步到完整单词
-  sel.removeAllRanges()
-  sel.addRange(range)
-
-  // 单个词:直接填入并朗读;多个词:弹出「填入」按钮
-  const wordCount = (text.match(/\b[\w']+\b/g) || []).length
-  if (wordCount <= 1) {
-    sel.removeAllRanges()
-    customText.value = text
-    speakText(text)
-    suppressSegmentRead.value = true
-    selectionText.value = ''
-    selectionBox.value = null
-    return
-  }
-  const rect = range.getBoundingClientRect()
-  selectionText.value = text
-  selectionBox.value = { x: rect.left + rect.width / 2, y: rect.top }
-}
-
-function fillSelected() {
-  if (!selectionText.value) return
-  customText.value = selectionText.value
-  selectionText.value = ''
-  selectionBox.value = null
-  window.getSelection?.()?.removeAllRanges?.()
-}
-
-// 点击台词区域即朗读整句,再点一次停止(刚选中文字时不朗读,留给"填入")
+// 点击台词区域即朗读整句,再点一次停止
 function toggleSpeakSentence() {
   const key = 'sentence'
-  if (selectionText.value) return
   if (speakingKey.value === key) return stopSpeaking()
   if (!('speechSynthesis' in window) || !defaultText.value) return
   const synth = window.speechSynthesis
@@ -246,6 +147,12 @@ function toggleSpeakSentence() {
   synth.speak(makeUtterance(defaultText.value, () => {
     if (speakingKey.value === key) speakingKey.value = null
   }))
+}
+
+// 点原始台词区:直接填入完整台词并朗读(与词块/断句交互一致)
+function fillAndSpeakSentence() {
+  customText.value = defaultText.value
+  toggleSpeakSentence()
 }
 
 // 朗读文本框内容(自定义跟读文本),再点一次停止
@@ -280,32 +187,18 @@ function fillAndSpeakWord(w, idx) {
   toggleSpeakWord(w, idx)
 }
 
-// 一次性朗读文本(单选直接填入后跟读用)
-function speakText(text) {
-  if (!('speechSynthesis' in window) || !text) return
-  const synth = window.speechSynthesis
-  synth.cancel()
-  speakingKey.value = 'selection'
-  synth.speak(makeUtterance(text, () => {
-    if (speakingKey.value === 'selection') speakingKey.value = null
-  }))
+// 点断句块:直接填入文本框并朗读该段(与词块交互一致)
+function fillAndSpeakSegment(i) {
+  const seg = segments.value[i]
+  if (!seg) return
+  customText.value = seg
+  toggleSpeakSegment(i)
 }
 
-// 右侧台词框点击 → 把完整台词填回跟读框
-function fillFromSentence() {
-  customText.value = defaultText.value
-}
-
-// 点单个断句朗读该段,再点一次停止;刚选中文字待填入时不朗读
+// 点断句块朗读该段,再点一次停止
 function toggleSpeakSegment(i) {
   const seg = segments.value[i]
   if (!seg) return
-  if (selectionText.value) return
-  // 刚用单选直接填入并朗读过,抑制这次点击引起的整句朗读
-  if (suppressSegmentRead.value) {
-    suppressSegmentRead.value = false
-    return
-  }
   const key = `seg-${i}`
   if (speakingKey.value === key) return stopSpeaking()
   if (!('speechSynthesis' in window)) return
@@ -358,8 +251,6 @@ function reset() {
   result.value = null
   error.value = ''
   recordingController.value = null
-  selectionText.value = ''
-  selectionBox.value = null
 }
 
 function cleanup() {
@@ -507,37 +398,36 @@ function close() {
                 </button>
               </div>
 
-              <div class='segment-list' @mousedown='suppressSegmentRead = false' @mouseup='onTargetEnMouseUp'>
-                <div
+              <div v-if='segments.length' class='word-chips segment-chips'>
+                <button
                   v-for='(seg, i) in segments'
-                  :key='i'
-                  class='segment'
+                  :key='`seg-${i}`'
+                  type='button'
+                  class='chip word-chip-btn'
                   :class='{ speaking: speakingKey === `seg-${i}` }'
-                  @click='toggleSpeakSegment(i)'
+                  :title='`点击播放并填入：${seg}`'
+                  @click='fillAndSpeakSegment(i)'
                 >
-                  <p class='segment-en'>{{ seg }}</p>
-                </div>
+                  <span class='wc-w seg-line'>
+                    <span class='seg-text'>{{ seg }}</span>
+                    <svg class='speak-hint' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>
+                      <polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5'></polygon>
+                      <path d='M15.54 8.46a5 5 0 0 1 0 7.07'></path>
+                    </svg>
+                  </span>
+                </button>
               </div>
             </section>
 
             <section class='action-section'>
-              <div class='sentence-line' :class='{ speaking: speakingKey === "sentence" }' @click='fillFromSentence'>
-                <button
-                  class='target-speak-btn'
-                  type='button'
-                  :title='speakingKey === "sentence" ? "停止朗读整句" : "朗读整句"'
-                  :aria-label='speakingKey === "sentence" ? "停止朗读整句" : "朗读整句"'
-                  @click.stop='toggleSpeakSentence'
-                >
-                  <svg v-if='speakingKey !== "sentence"' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
-                    <polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5'></polygon>
-                    <path d='M15.54 8.46a5 5 0 0 1 0 7.07'></path>
-                    <path d='M19.07 4.93a10 10 0 0 1 0 14.14'></path>
-                  </svg>
-                  <svg v-else width='14' height='14' viewBox='0 0 24 24' fill='currentColor'>
-                    <rect x='7' y='7' width='10' height='10' rx='2'></rect>
-                  </svg>
-                </button>
+              <div
+                class='sentence-line'
+                :class='{ speaking: speakingKey === "sentence" }'
+                role='button'
+                tabindex='0'
+                :title='speakingKey === "sentence" ? "停止朗读整句" : "播放并填入整句"'
+                @click='fillAndSpeakSentence'
+              >
                 <p class='sentence-text'>{{ defaultText }}</p>
                 <p v-if='sentence.zh' class='target-zh'>{{ sentence.zh }}</p>
               </div>
@@ -715,21 +605,7 @@ function close() {
         </div>
       </div>
 
-      <button
-        v-if='selectionText'
-        class='fill-btn'
-        type='button'
-        :style='fillStyle'
-        @mousedown.prevent
-        @click.stop='fillSelected'
-      >
-        <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'>
-          <path d='M12 20h9'/>
-          <path d='M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z'/>
-        </svg>
-        填入
-      </button>
-    </div>
+      </div>
   </transition>
 </template>
 
@@ -837,15 +713,22 @@ function close() {
   overflow: hidden;
 }
 
-/* 右侧整句台词 + 右上角播放按钮 */
+/* 右侧整句台词:点击播放并填入(与词块/断句交互一致) */
 .sentence-line {
-  position: relative;
   flex: none;
-  padding: 12px 16px 12px 44px;
+  padding: 12px 16px;
   border-radius: var(--radius-sm);
   background: linear-gradient(180deg, var(--yellow-bg), var(--pink-bg));
   border: 2px dashed rgba(255, 143, 171, 0.4);
-  transition: border-color var(--transition), background var(--transition);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition),
+    transform var(--transition), box-shadow var(--transition);
+}
+
+.sentence-line:hover {
+  border-color: rgba(255, 143, 171, 0.8);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .sentence-line.speaking {
@@ -868,63 +751,22 @@ function close() {
   color: #fff;
 }
 
-/* 右上角播放按钮:整句朗读只由这里触发 */
-.target-speak-btn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  color: var(--pink);
-  background: #fff;
-  border: 2px solid transparent;
-  box-shadow: var(--shadow-pop);
-  transition: background var(--transition), color var(--transition),
-    transform var(--transition), border-color var(--transition);
+/* 断句块:与词块一致的样式/交互(纵向排列,点击填入并朗读) */
+.segment-chips {
+  margin-top: 4px;
 }
 
-.target-speak-btn:hover {
-  border-color: var(--pink);
-  transform: translateY(-1px);
-}
-
-.sentence-line.speaking .target-speak-btn {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.18);
-  border-color: transparent;
-}
-
-/* 断句列表:纵向排列,可单独点读 / 选中填入 */
-.segment-list {
+.wc-w.seg-line {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 6px;
+  width: 100%;
 }
 
-.segment {
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-}
-
-.segment-en {
-  font-family: var(--font-display);
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1.35;
-  margin: 0;
-  color: var(--ink);
+.seg-text {
+  flex: 1;
+  min-width: 0;
   word-break: break-word;
-  user-select: text;
-  cursor: text;
-}
-
-.segment.speaking .segment-en {
-  color: var(--blue);
 }
 
 .target-zh {
@@ -932,29 +774,6 @@ function close() {
   color: var(--muted);
   margin: 4px 0 0;
   line-height: 1.4;
-}
-
-/* 选中台词后出现在选区上方的"填入"浮窗按钮 */
-.fill-btn {
-  position: fixed;
-  z-index: 120;
-  transform: translate(-50%, -100%);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: var(--radius-pill);
-  font-size: 14px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--grad-blue);
-  box-shadow: var(--shadow-blue), var(--shadow-pop);
-  cursor: pointer;
-  animation: pop-in 200ms var(--ease-bounce) backwards;
-}
-
-.fill-btn:hover {
-  transform: translate(-50%, -100%) translateY(-2px);
 }
 
 /* 关键词区:位于左列学习区内,纵向排列 */
@@ -1023,38 +842,53 @@ function close() {
   color: var(--muted);
 }
 
-/* ---------- 自定义跟读文本 ---------- */
+/* ---------- 自定义跟读文本(主要教学窗口) ---------- */
 .custom-input {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   flex: none;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, var(--blue-bg), #fff);
+  border: 2px solid rgba(63, 140, 255, 0.22);
+  box-shadow: var(--shadow-sm);
 }
 
 .custom-input label {
   flex: none;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--muted);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--blue);
 }
 
 .custom-input input {
   flex: 1;
   min-width: 0;
-  min-height: 40px;
-  padding: 8px 12px;
-  font-size: 14px;
+  min-height: 64px;
+  padding: 12px 20px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.3;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  border: 2px solid var(--border);
+}
+
+.custom-input input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgba(63, 140, 255, 0.15);
 }
 
 .speak-custom-btn {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-height: 40px;
-  padding: 6px 12px;
+  gap: 6px;
+  min-height: 56px;
+  padding: 8px 16px;
   border-radius: var(--radius-pill);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--blue);
   background: var(--blue-bg);
@@ -1547,9 +1381,6 @@ function close() {
     max-width: 100%;
   }
   .repeat-header h3 {
-    font-size: 18px;
-  }
-  .segment-en {
     font-size: 18px;
   }
   .word-chips {

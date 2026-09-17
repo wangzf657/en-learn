@@ -79,15 +79,16 @@ describe('RepeatModal 朗读 / 文本同步 / 录音切换', () => {
     expect(wrapper.find('.wc-note').text()).toBe('打招呼')
   })
 
-  it('手改文本 → 台词框保持完整台词;点击台词框填入完整台词', async () => {
+  it('手改文本 → 台词框保持完整台词;点击台词区回填完整台词', async () => {
     const wrapper = mountModal()
     await wrapper.find('#repeat-custom').setValue('hello')
     // 台词框始终展示完整台词,不随文本框变化
-    expect(wrapper.find('.segment-en').text()).toBe('Hello world')
+    expect(wrapper.find('.sentence-text').text()).toBe('Hello world')
     expect(wrapper.find('#repeat-custom').element.value).toBe('hello')
     // 恢复按钮已去掉
     expect(wrapper.find('.restore-btn').exists()).toBe(false)
 
+    // 点击台词区回填完整台词(与词块/断句一致)
     await wrapper.find('.sentence-line').trigger('click')
     expect(wrapper.find('#repeat-custom').element.value).toBe('Hello world')
   })
@@ -117,26 +118,27 @@ describe('RepeatModal 朗读 / 文本同步 / 录音切换', () => {
     expect(chips()[1].classes()).not.toContain('speaking')
   })
 
-  it('点右上角按钮朗读整句:单条 utterance,lang=en-US / rate=0.9,再点一次取消', async () => {
+  it('点台词区朗读整句并填入:单条 utterance,lang=en-US / rate=0.9,再点一次取消', async () => {
     const wrapper = mountModal()
-    const btn = () => wrapper.find('.target-speak-btn')
+    const line = () => wrapper.find('.sentence-line')
 
-    await btn().trigger('click')
+    await line().trigger('click')
     expect(utterances[0].text).toBe('Hello world')
     expect(utterances[0].lang).toBe('en-US')
     expect(utterances[0].rate).toBe(0.9)
-    expect(wrapper.find('.sentence-line').classes()).toContain('speaking')
+    expect(wrapper.find('#repeat-custom').element.value).toBe('Hello world')
+    expect(line().classes()).toContain('speaking')
 
-    await btn().trigger('click')
+    await line().trigger('click')
     expect(synth.cancel).toHaveBeenCalled()
-    expect(wrapper.find('.sentence-line').classes()).not.toContain('speaking')
+    expect(line().classes()).not.toContain('speaking')
   })
 
   it('朗读台词与词块互斥:读句后读词会 cancel 上一条', async () => {
     const wrapper = mountModal()
-    const btn = () => wrapper.find('.target-speak-btn')
+    const line = () => wrapper.find('.sentence-line')
 
-    await btn().trigger('click')
+    await line().trigger('click')
     expect(utterances.map((u) => u.text)).toEqual(['Hello world'])
     expect(wrapper.find('.sentence-line').classes()).toContain('speaking')
 
@@ -193,12 +195,12 @@ describe('RepeatModal 朗读 / 文本同步 / 录音切换', () => {
   it('无 speechSynthesis 时点击朗读不报错', async () => {
     delete window.speechSynthesis
     const wrapper = mountModal()
-    await wrapper.find('.target-speak-btn').trigger('click')
+    await wrapper.find('.sentence-line').trigger('click')
     await wrapper.findAll('.word-chip-btn')[0].trigger('click')
-    expect(wrapper.find('.segment-en').text()).toBe('Hello world')
+    expect(wrapper.find('.sentence-text').text()).toBe('Hello world')
   })
 
-  it('按常用标点把台词切成断句,点单句读该句', async () => {
+  it('按常用标点把台词切成断句,点单句填入并朗读该句', async () => {
     const wrapper = mount(RepeatModal, {
       props: {
         open: true,
@@ -206,11 +208,13 @@ describe('RepeatModal 朗读 / 文本同步 / 录音切换', () => {
       },
     })
 
-    const segs = wrapper.findAll('.segment-en')
+    const segs = wrapper.findAll('.seg-text')
     expect(segs.map((s) => s.text())).toEqual(['How you doing?', 'Great!'])
 
-    await wrapper.findAll('.segment')[0].trigger('click')
+    const chips = wrapper.findAll('.word-chip-btn')
+    await chips[0].trigger('click')
     expect(utterances[0].text).toBe('How you doing?')
-    expect(wrapper.findAll('.segment')[0].classes()).toContain('speaking')
+    expect(wrapper.find('#repeat-custom').element.value).toBe('How you doing?')
+    expect(chips[0].classes()).toContain('speaking')
   })
 })
