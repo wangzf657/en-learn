@@ -1,8 +1,8 @@
 """Echoic — 发音评分库(云 API 对接壳)。
 
 统一入口 `score_recording()` 经 provider 注册表分发到具体 API 实现;
-后台配置决定用哪家。内置 mock 供联调/冒烟;真实 provider 的选型与
-对接规范见 docs/scoring-api-research.md 与 docs/scoring-provider-design.md。
+后台配置决定用哪家。内置 mock 供联调/冒烟;真实 provider 的对接规范
+见 docs/design.md §7(跟读评分)。
 """
 
 from .providers import (

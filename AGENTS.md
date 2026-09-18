@@ -4,11 +4,11 @@
 
 ## 项目结构
 
-`en-learn` — 英语学习应用(单机自用,无登录无云端),单仓三部分;需求与设计文档在 `docs/`(design.md 有架构图与路由说明):
+`en-learn` — 英语学习应用(单机自用,无登录无云端),单仓三部分;需求与设计文档:**`docs/design.md`(V1.0 唯一文档,含架构图与 API 契约)**,迭代方向 `docs/v1.1.md`(尚未实现):
 
 - `backend/main.py` — 宿主后端,单文件 FastAPI + SQLite(`data/enlearn.db`),**课程 → 素材 + 打卡管理 + 通用设置**。统一前缀存 `data/library.json`(`{"root": 绝对路径}`,缺失/损坏回落空串;`GET/PUT /api/admin/library`,未配置时导入/流式 422);课程导入 `POST /api/admin/courses/import`(`{folder}`:课程=文件夹本身,只取直接子级 `*.mp4` 不递归、按文件名自然排序,标题去 `1.`/`01_`/`001-` 前缀,同名 `.json` 作字幕,坏字幕进 skipped 不占位;幂等键 `rel_path`——重导 UPDATE id 稳定,消失的文件保留不删);课程管理 `GET /api/admin/courses`、`GET /api/admin/courses/{id}`、`DELETE /api/admin/courses/{id}`(级联删素材+排期+清空天打卡)、`DELETE /api/admin/materials/{id}`、`PUT /api/admin/materials/{id}/read`(已读状态机,只填 NULL);打卡管理 `POST /api/admin/schedule`(`{courseId,dateFrom,dateTo}`,素材自然排序按天均分,n<d 时前 n 天各 1 后留空,可跨月,叠加幂等)、`GET /api/admin/schedule?month`、`DELETE /api/admin/schedule?month`(清空当月排期+打卡)、`POST /api/admin/day/{date}/materials`、`DELETE /api/admin/day/{date}`、`DELETE /api/admin/day/{date}/materials/{materialId}`;消费端 `/api/calendar`、`/api/day/{date}`、`POST /api/day/{date}/checkin`(按天打卡幂等,首次打卡把当天素材置已读);流/字幕 `GET /api/materials/{id}/stream|srt`;跟读评分 `/api/score` 与评分配置 `GET/PUT /api/admin/scoring`;服务端口 8420
-- `backend/echoic/` — **发音评分对接壳**:统一入口 `score_recording()` + provider 注册表,**已上线 mock + unisound(云知声)**,经宿主 `/api/score` 接入,真实密钥配置在 `data/scoring.json`(Admin 页可改,即时生效)。选型与架构见 `docs/scoring-api-research.md`、`docs/scoring-provider-design.md`
-- `frontend/` — Vue 3 SPA(Vite + vue-router + vitest),构建产物 `frontend/dist/` 由宿主后端托管(未构建时返回提示)
+- `backend/echoic/` — **发音评分对接壳**:统一入口 `score_recording()` + provider 注册表,**已上线 mock + unisound(云知声)**,经宿主 `/api/score` 接入,真实密钥配置在 `data/scoring.json`(Admin 页可改,即时生效)。对接规约见 `docs/design.md` §7
+- `frontend/` — Vue 3 SPA(Vite + vue-router + vitest),构建产物 `frontend/dist/` 由宿主后端托管(未构建时返回提示)。核心交互:播放页一屏固定 + 快捷键(空格/Enter/F11)、跟读弹窗 `RepeatModal.vue`(词块/断句 TTS、空格录音、富评分展示)、字幕样式选择
 
 工作环境:`backend/.venv`(Python 3.10+,venv 在 backend 下,勿放根目录),依赖见 `backend/requirements.txt`(装入 venv)。**无 lint/CI/格式化工具**。
 
@@ -27,7 +27,7 @@ DB 结构升级:`main.py` 用 `PRAGMA user_version` 打版本戳 + `MIGRATIONS` 
 
 ## echoic 评分包
 
-云 API 对接壳(本地模型栈已整体移除,决策与调研见 docs/scoring-api-research.md)。
+云 API 对接壳(本地模型栈已整体移除;对接规约见 docs/design.md §7)。
 
 ### 入口(库的公开 API)
 
@@ -52,7 +52,7 @@ available_providers()  # ["mock", "unisound"] — 供后台配置页做下拉
 
 ```
 echoic/__init__.py       # 入口 score_recording + re-export
-echoic/schemas.py        # ScoringResult / WordScore(0–100)
+echoic/schemas.py        # ScoringResult / WordScore(0–100) + 诊断字段(词 type/stress/phonemes、ASR 对比、音质)
 echoic/providers/base.py # ScoringProvider 协议 + 注册表
 echoic/providers/mock.py # 固定分数假 provider(联调/冒烟)
 echoic/providers/unisound.py # 云知声 sacalleval HTTP API(线上 provider)
@@ -64,9 +64,10 @@ echoic/providers/unisound.py # 云知声 sacalleval HTTP API(线上 provider)
 
 - **素材/课程存相对路径 + 统一前缀**:整个素材库挪盘只改 `data/library.json` 的 `root`;库内挪动/改名文件 = `rel_path` 变了 = 新素材(旧条目要手动删)。未配置 root 时导入与 `/api/materials/{id}/stream` 一律 422。
 - **前端录音直接录 WAV(16k/16bit/单声道),别用 MediaRecorder 默认的 webm**——所有候选云 API 都不收 webm,录 WAV 后后端零转码、无 ffmpeg 依赖。
+- **TTS 走浏览器原生 speechSynthesis**(`frontend/src/utils/tts.js`):音色列表异步加载(靠 `voiceschanged` 刷新),配置存 localStorage `enlearn:tts`;App 启动与切换音色时用零音量 utterance + `resume()` 预热,规避 Chrome 闲置后首句不出声。
 - 手动起后端调试时设 `ENLEARN_NO_BROWSER=1`,否则启动 1.5 秒后自动开浏览器。
 - `main.py` 路径与 cwd 无关:非打包时由 `__file__` 推导;打包(frozen)时只读资源在 `sys._MEIPASS`、可写数据(`data/`)在 exe 旁边。`backend/data/enlearn.db` 是历史残留,真实库在根 `data/`。
 
 ## 开发要求
 - **无登录无云端**:单机自用,无用户系统、无云存储、无云 API 调用
-- **更新文档**:需求/设计文档在 `docs/`,开发时按需更新
+- **更新文档**:唯一需求/设计文档 `docs/design.md`(V1.0),改动按它的口径同步;新迭代方向记 `docs/v1.1.md`

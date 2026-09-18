@@ -5,7 +5,7 @@ from .base import ScoringProvider
 class MockProvider(ScoringProvider):
     """固定分数的假 provider:联调前端/冒烟测试用,不读音频、无网络。
 
-    分数值与 docs/design.md §5 示例一致,便于对文档核对。
+    分数值与 docs/design.md 评分契约示例一致,便于对文档核对。
     """
 
     name = "mock"
