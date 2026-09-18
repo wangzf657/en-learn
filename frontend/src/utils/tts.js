@@ -68,3 +68,24 @@ export function preview(text, { voiceURI, rate } = {}) {
   if (voice) utter.voice = voice
   synth.speak(utter)
 }
+
+// 预热:用指定(或当前保存)音色静默播一个空句,触发引擎初始化,消除首次朗读/试听的延迟。
+// 对本地音色有效(引擎冷启动);同时 resume() 规避 Chrome 长期闲置后首句不出声的问题。
+export function warmupTts({ voiceURI } = {}) {
+  if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return
+  const synth = window.speechSynthesis
+  if (!synth) return
+  try {
+    if (typeof synth.resume === 'function') synth.resume()
+    const utter = new SpeechSynthesisUtterance(' ')
+    utter.volume = 0
+    utter.rate = 1
+    utter.pitch = 1
+    const voice = resolveVoice(voiceURI)
+    if (voice) utter.voice = voice
+    else utter.lang = LANG
+    synth.speak(utter)
+  } catch {
+    // 引擎不可用时静默忽略
+  }
+}

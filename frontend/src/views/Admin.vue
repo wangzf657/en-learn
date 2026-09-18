@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { adminApi, scoringApi } from '../api.js'
-import { loadTtsSettings, saveTtsSettings, listEnglishVoices, preview } from '../utils/tts.js'
+import { loadTtsSettings, saveTtsSettings, listEnglishVoices, preview, warmupTts } from '../utils/tts.js'
 
 const courses = ref([])
 const courseDetails = ref({})
@@ -178,11 +178,18 @@ function loadTtsVoices() {
   const synth = window.speechSynthesis
   const update = () => {
     ttsVoices.value = listEnglishVoices()
+    // 音色列表就绪后,用当前选中的音色预热引擎,消除首次朗读/试听的冷启动延迟
+    warmupTts({ voiceURI: ttsVoiceURI.value })
   }
   update()
   if (typeof synth.addEventListener === 'function') {
     synth.addEventListener('voiceschanged', update)
   }
+}
+
+function onTtsVoiceChange() {
+  // 切换选中音色时立即预热,保证换音色后的第一次试听也不卡顿
+  warmupTts({ voiceURI: ttsVoiceURI.value })
 }
 
 function previewTts() {
@@ -553,9 +560,9 @@ function selectCalendarDate(date) {
         <div class="form-grid">
           <label>
             <span>语音</span>
-            <select v-model="ttsVoiceURI">
+            <select v-model="ttsVoiceURI" @change="onTtsVoiceChange">
               <option value="">系统默认</option>
-              <option v-for="v in ttsVoices" :key="v.voiceURI" :value="v.voiceURI">{{ v.name }}（{{ v.lang }}）</option>
+              <option v-for="v in ttsVoices" :key="v.voiceURI" :value="v.voiceURI">{{ v.name }}（{{ v.lang }} · {{ v.localService === false ? '联网' : '本地' }}）</option>
             </select>
           </label>
           <label>

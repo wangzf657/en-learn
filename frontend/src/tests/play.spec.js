@@ -113,21 +113,21 @@ describe('Play.vue core interactions', () => {
     expect(wrapper.findAll('.sentence-card')[2].classes()).toContain('active')
   })
 
-  it('clicking a sentence seeks video to its start and plays', async () => {
+  it('clicking the timestamp button seeks video to its start and plays', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
 
     const video = wrapper.find('video').element
     let played = false
     video.play = () => { played = true; return Promise.resolve() }
 
-    const secondCard = wrapper.findAll('.sentence-card')[1]
-    await secondCard.trigger('click')
+    const secondCardBtn = wrapper.findAll('.sentence-card')[1].find('.seek-btn')
+    await secondCardBtn.trigger('click')
 
     expect(video.currentTime).toBe(5.0)
     expect(played).toBe(true)
   })
 
-  it('keeps playing past the clicked sentence end', async () => {
+  it('keeps playing past the clicked timestamp end', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
 
     const video = wrapper.find('video').element
@@ -135,7 +135,7 @@ describe('Play.vue core interactions', () => {
     video.play = () => Promise.resolve()
     video.pause = pauseSpy
 
-    await wrapper.findAll('.sentence-card')[1].trigger('click')
+    await wrapper.findAll('.sentence-card')[1].find('.seek-btn').trigger('click')
     expect(video.currentTime).toBe(5.0)
 
     // 新行为:不在句尾自动暂停,越过该句 end 继续往下播
@@ -145,14 +145,13 @@ describe('Play.vue core interactions', () => {
     expect(pauseSpy).not.toHaveBeenCalled()
   })
 
-  it('records repeat in modal: score stays inside the modal, card keeps 跟读一下', async () => {
+  it('records repeat in modal: score stays inside the modal, card remains clickable', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
 
     const firstCard = wrapper.findAll('.sentence-card')[0]
-    const repeatBtn = firstCard.find('.repeat-btn')
-    expect(repeatBtn.text()).toBe('跟读一下')
+    expect(firstCard.find('.seek-btn').exists()).toBe(true)
 
-    await repeatBtn.trigger('click')
+    await firstCard.trigger('click')
     expect(wrapper.find('.repeat-modal').exists()).toBe(true)
 
     const recordBtn = wrapper.find('.record-btn')
@@ -180,7 +179,7 @@ describe('Play.vue core interactions', () => {
 
     expect(firstCard.text()).not.toContain('准确度')
     expect(firstCard.text()).not.toContain('本次得分')
-    expect(firstCard.find('.repeat-btn').text()).toBe('跟读一下')
+    expect(firstCard.find('.seek-btn').exists()).toBe(true)
 
     // 关掉弹窗:得分随之消失,数据不出弹窗
     await wrapper.find('.repeat-modal .icon-btn').trigger('click')
@@ -195,7 +194,7 @@ describe('Play.vue core interactions', () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
 
     const firstCard = wrapper.findAll('.sentence-card')[0]
-    await firstCard.find('.repeat-btn').trigger('click')
+    await firstCard.trigger('click')
 
     const recordBtn = wrapper.find('.record-btn')
     await recordBtn.trigger('click')

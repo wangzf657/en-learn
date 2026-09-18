@@ -1,7 +1,14 @@
 <script setup>
+import { onMounted } from 'vue'
 import { useRoute, RouterView } from 'vue-router'
+import { loadTtsSettings, warmupTts } from './utils/tts.js'
 
 const route = useRoute()
+
+// 启动即用已保存音色预热 TTS 引擎,消除跟读/单词/例句首次发声的冷启动延迟
+onMounted(() => {
+  warmupTts({ voiceURI: loadTtsSettings().voiceURI })
+})
 </script>
 
 <template>
@@ -12,6 +19,13 @@ const route = useRoute()
         <span class="brand-name">EnLearn</span>
       </router-link>
       <nav class="app-nav">
+        <router-link to="/" class="nav-link" :class="{ active: route.path === '/' }">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+            <path d="M16 2v4M8 2v4M3 10h18"></path>
+          </svg>
+          <span>日历</span>
+        </router-link>
         <router-link to="/local" class="nav-link" :class="{ active: route.path === '/local' }">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>

@@ -94,6 +94,8 @@ async function toggleFullscreen() {
 
 function onFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement
+  // 进入全屏时默认收起台词栏(仍可经回车/收起按钮自行展开)
+  if (document.fullscreenElement) subtitleOpen.value = false
 }
 
 const currentIndex = computed(() => {
@@ -116,6 +118,9 @@ onMounted(() => {
   load()
   document.addEventListener('fullscreenchange', onFullscreenChange)
   window.addEventListener('keydown', onKeyDown)
+  // 播放页固定一屏,禁用页面整体滚动(离开时恢复)
+  document.documentElement.style.overflow = 'hidden'
+  document.body.style.overflow = 'hidden'
 })
 
 async function load() {
@@ -168,12 +173,24 @@ function isEditableTarget(el) {
   return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el.isContentEditable
 }
 
-// 空格键仅用于播放/暂停(弹窗打开或焦点在输入控件时除外)
+// 全局快捷键:空格=播放/暂停,F11=全屏,回车=收起/展开单词栏
+// 弹窗打开或焦点在输入控件(输入框/下拉/可编辑)时除外;普通按钮聚焦时也走全局,
+// 并用 preventDefault 阻止按钮自身的默认激活,避免“点了一次全屏后空格/回车都变成全屏”。
 function onKeyDown(e) {
   if (repeatOpen.value) return
-  if (e.code !== 'Space' || e.repeat || isEditableTarget(e.target)) return
-  e.preventDefault()
-  togglePlay()
+  if (e.code === 'F11') {
+    e.preventDefault()
+    toggleFullscreen()
+    return
+  }
+  if (e.repeat || isEditableTarget(e.target)) return
+  if (e.code === 'Space') {
+    e.preventDefault()
+    togglePlay()
+  } else if (e.code === 'Enter') {
+    e.preventDefault()
+    toggleSubtitle()
+  }
 }
 
 function onTimeUpdate() {
@@ -276,60 +293,23 @@ onBeforeUnmount(() => {
   window.removeEventListener('mouseup', stopDrag)
   window.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  document.documentElement.style.overflow = ''
+  document.body.style.overflow = ''
 })
 </script>
 
 <template>
   <div class="page play-page">
-    <header class="page-header">
-      <button class="btn btn-secondary" @click="$router.push('/')">‹ 返回日历</button>
-      <div class="title-group">
-        <h1 class="page-title">{{ pageTitle }}</h1>
-        <span v-if="checkedIn" class="badge badge-green">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          已打卡
-        </span>
-        <span v-else class="badge badge-yellow">未打卡</span>
-        <button
-          v-if="!checkedIn"
-          class="btn btn-primary btn-lg checkin-btn"
-          :disabled="checkinLoading"
-          @click="doCheckin"
-        >
-          <span v-if="checkinLoading">打卡中…</span>
-          <template v-else>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            <span>已完成打卡</span>
-          </template>
-        </button>
-      </div>
-    </header>
-
-    <div v-if="day?.materials?.length > 1" class="video-chips" role="tablist" aria-label="素材切换">
-      <button
-        v-for="(m, i) in day.materials"
-        :key="m.id ?? i"
-        type="button"
-        class="chip"
-        :class="{ active: i === currentMaterialIndex }"
-        role="tab"
-        :aria-selected="i === currentMaterialIndex"
-        @click="currentMaterialIndex = i"
-      >
-        {{ m.title || `素材 ${i + 1}` }}
-      </button>
-    </div>
-
-    <div v-if="loading" class="card empty-state">
+    <div v-if="loading" class="card empty-state play-empty">
       <p>正在加载学习内容…</p>
     </div>
 
-    <div v-else-if="error" class="card empty-state">
+    <div v-else-if="error" class="card empty-state play-empty">
       <h3>{{ error }}</h3>
       <button class="btn btn-primary" style="margin-top: 16px" @click="router.push('/')">回日历</button>
     </div>
 
-    <div v-else ref="layoutRef" class="play-layout">
+    <div v-else ref="layoutRef" class="play-layout" :class="{ 'panel-on': subtitleOpen }">
       <section class="video-section card">
         <div class="video-wrap">
           <video
@@ -352,120 +332,137 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="controls">
-          <div class="progress-area">
-            <div
-              ref="progressEl"
-              class="progress-track"
-              @click="seekFromEvent"
-              @mousedown="startDrag"
-            >
-              <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
-              <div class="progress-thumb" :style="{ left: progressPercent + '%' }"></div>
-            </div>
-            <div class="time-row">
-              <span class="time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
-            </div>
+          <button class="play-btn" @click="togglePlay" :aria-label="playing ? '暂停' : '播放'">
+            <svg v-if="playing" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
+            </svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+
+          <div class="volume-area">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <path v-if="volume > 0" d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+              <path v-if="volume > 0.5" d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+            </svg>
+            <input id="volume" type="range" min="0" max="1" step="0.05" v-model.number="volume" @input="setVolume" />
           </div>
 
-          <div class="controls-bar">
-            <div class="controls-group">
-              <button class="play-btn" @click="togglePlay" :aria-label="playing ? '暂停' : '播放'">
-                <svg v-if="playing" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
-                </svg>
-                <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </button>
+          <div
+            ref="progressEl"
+            class="progress-track"
+            @click="seekFromEvent"
+            @mousedown="startDrag"
+          >
+            <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
+            <div class="progress-thumb" :style="{ left: progressPercent + '%' }"></div>
+          </div>
 
-              <div class="volume-area">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                  <path v-if="volume > 0" d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                  <path v-if="volume > 0.5" d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
-                </svg>
-                <input id="volume" type="range" min="0" max="1" step="0.05" v-model.number="volume" @input="setVolume" />
-              </div>
-            </div>
+          <span class="time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
 
-            <div class="controls-group controls-extras">
-              <select
-                class="rate-select"
-                :value="playbackRate"
-                aria-label="播放倍速"
-                title="播放倍速"
-                @change="applyRate"
-              >
-                <option v-for="r in rates" :key="r" :value="r">{{ r }}×</option>
-              </select>
+          <div class="controls-right">
+            <select
+              class="rate-select"
+              :value="playbackRate"
+              aria-label="播放倍速"
+              title="播放倍速"
+              @change="applyRate"
+            >
+              <option v-for="r in rates" :key="r" :value="r">{{ r }}×</option>
+            </select>
 
-              <button
-                class="icon-btn drawer-toggle"
-                type="button"
-                :title="subtitleOpen ? '收起台词' : '展开台词'"
-                @click="toggleSubtitle"
-              >
-                <svg v-if="subtitleOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2"/>
-                  <path d="M9 3v18"/>
-                  <path d="M14 9l3 3-3 3"/>
-                </svg>
-                <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2"/>
-                  <path d="M15 3v18"/>
-                  <path d="M10 9l-3 3 3 3"/>
-                </svg>
-              </button>
+            <button
+              class="icon-btn drawer-toggle"
+              type="button"
+              :title="subtitleOpen ? '收起台词' : '展开台词'"
+              @click="toggleSubtitle"
+            >
+              <svg v-if="subtitleOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M9 3v18"/>
+                <path d="M14 9l3 3-3 3"/>
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M15 3v18"/>
+                <path d="M10 9l-3 3 3 3"/>
+              </svg>
+            </button>
 
-              <button
-                class="icon-btn fullscreen-btn"
-                type="button"
-                :title="isFullscreen ? '退出全屏' : '全屏'"
-                @click="toggleFullscreen"
-              >
-                <svg v-if="isFullscreen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 14v5a1 1 0 0 0 1 1h5"/>
-                  <path d="M20 14v5a1 1 0 0 1-1 1h-5"/>
-                  <path d="M15 4h5a1 1 0 0 1 1 1v5"/>
-                  <path d="M9 4H4a1 1 0 0 0-1 1v5"/>
-                </svg>
-                <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M8 3H3v5"/>
-                  <path d="M16 3h5v5"/>
-                  <path d="M21 16v5h-5"/>
-                  <path d="M3 16v5h5"/>
-                </svg>
-              </button>
+            <button
+              class="icon-btn fullscreen-btn"
+              type="button"
+              :title="isFullscreen ? '退出全屏' : '全屏'"
+              @click="toggleFullscreen"
+            >
+              <svg v-if="isFullscreen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 14v5a1 1 0 0 0 1 1h5"/>
+                <path d="M20 14v5a1 1 0 0 1-1 1h-5"/>
+                <path d="M15 4h5a1 1 0 0 1 1 1v5"/>
+                <path d="M9 4H4a1 1 0 0 0-1 1v5"/>
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 3H3v5"/>
+                <path d="M16 3h5v5"/>
+                <path d="M21 16v5h-5"/>
+                <path d="M3 16v5h5"/>
+              </svg>
+            </button>
 
-              <SubtitleStylePicker v-model="subtitleStyle" v-model:size="subtitleSize" />
-            </div>
+            <SubtitleStylePicker v-model="subtitleStyle" v-model:size="subtitleSize" />
           </div>
         </div>
       </section>
 
       <div class="subtitle-drawer" :class="{ open: subtitleOpen }">
+        <div class="drawer-header">
+          <h1 class="drawer-title" :title="pageTitle">{{ pageTitle }}</h1>
+
+          <div class="drawer-meta">
+            <span v-if="checkedIn" class="badge badge-green">已打卡</span>
+            <span v-else class="badge badge-yellow">未打卡</span>
+            <button
+              v-if="!checkedIn"
+              class="btn btn-primary checkin-btn"
+              :disabled="checkinLoading"
+              @click="doCheckin"
+            >
+              <span v-if="checkinLoading">打卡中…</span>
+              <template v-else>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                <span>已完成打卡</span>
+              </template>
+            </button>
+          </div>
+
+          <div v-if="day?.materials?.length > 1" class="video-chips" role="tablist" aria-label="素材切换">
+            <button
+              v-for="(m, i) in day.materials"
+              :key="m.id ?? i"
+              type="button"
+              class="chip"
+              :class="{ active: i === currentMaterialIndex }"
+              role="tab"
+              :aria-selected="i === currentMaterialIndex"
+              @click="currentMaterialIndex = i"
+            >
+              {{ m.title || `素材 ${i + 1}` }}
+            </button>
+          </div>
+        </div>
+
         <SubtitlePanel
+          class="panel-fill"
           title="今日台词"
+          card-action="repeat"
           :sentences="sentences"
           :current-index="currentIndex"
           empty-text="暂无字幕数据"
           @seek="seekToSentence"
-        >
-          <template #actions="{ s }">
-            <div class="repeat-row">
-              <button
-                class="btn repeat-btn btn-primary"
-                @click.stop="openRepeat(s)"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                </svg>
-                <span>跟读一下</span>
-              </button>
-            </div>
-          </template>
-        </SubtitlePanel>
+          @repeat="openRepeat"
+        />
       </div>
     </div>
 
@@ -501,32 +498,144 @@ onBeforeUnmount(() => {
 .play-page {
   width: 100%;
   max-width: none;
-  padding: 20px 24px 80px;
+  height: calc(100svh - var(--appbar-h, 70px));
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.title-group {
+.play-empty {
+  margin: auto;
+  max-width: 560px;
+}
+
+.play-layout {
+  --controls-h: 64px;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 0;
+  align-items: stretch;
+  padding: 16px 20px 20px;
+}
+
+.play-layout:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  padding: 0;
+  background: #000;
+  gap: 0;
+}
+
+.play-layout:fullscreen .video-section {
+  position: static;
+  border-radius: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.play-layout:fullscreen .video-wrap {
+  height: calc(100% - var(--controls-h));
+  width: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+.play-layout:fullscreen .subtitle-drawer.open {
+  flex: 0 0 auto;
+  width: clamp(420px, 30vw, 640px);
+  margin-left: 0;
+}
+
+.play-layout:fullscreen .subtitle-drawer :deep(.panel-section) {
+  max-height: 100vh;
+  height: 100vh;
+  border-radius: 0;
+  border: none;
+  border-left: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.video-section {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: var(--card);
+}
+
+.subtitle-drawer {
+  flex: 0 0 auto;
+  width: 0;
+  overflow: hidden;
+  transition: width 300ms var(--ease-bounce), margin-left 300ms var(--ease-bounce);
+  display: flex;
+  flex-direction: column;
+}
+
+.subtitle-drawer.open {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  margin-left: 20px;
+}
+
+.drawer-header {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+  margin-bottom: 16px;
+}
+
+.drawer-title {
+  font-size: 22px;
+  line-height: 1.3;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawer-meta {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .checkin-btn {
-  margin-left: 4px;
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 14px;
 }
 
 .video-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 2px dashed var(--border);
 }
 
 .chip {
-  padding: 10px 20px;
-  min-height: 48px;
+  padding: 8px 16px;
+  min-height: 38px;
   border-radius: var(--radius-pill);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--muted);
   background: var(--card);
@@ -553,62 +662,27 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-blue), var(--shadow-pop);
 }
 
-.play-layout {
-  display: flex;
-  gap: 0;
-  align-items: stretch;
-}
-
-.play-layout:fullscreen {
-  width: 100vw;
-  height: 100vh;
-  padding: 0;
-  background: var(--bg);
-}
-
-.play-layout:fullscreen .video-section {
-  position: static;
-  border-radius: 0;
-  border: none;
-}
-
-.play-layout:fullscreen .video-wrap {
-  border-radius: 0;
-  max-height: none;
-}
-
-.video-section {
-  flex: 1 1 auto;
-  min-width: 0;
-  position: sticky;
-  top: 92px;
-  padding: 0;
-  overflow: hidden;
-  background: var(--card);
-}
-
-.subtitle-drawer {
-  flex: 0 0 auto;
-  width: 0;
-  overflow: hidden;
-  transition: width 300ms var(--ease-bounce), margin-left 300ms var(--ease-bounce);
-}
-
-.subtitle-drawer.open {
-  width: 25%;
-  min-width: 220px;
-  margin-left: 24px;
-}
-
 .video-wrap {
   position: relative;
   background: #16102b;
+  height: calc(100% - var(--controls-h));
   width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: calc(100svh - 176px);
+  aspect-ratio: auto;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* 台词面板展开时,视频保持 16:9 等比,把剩余宽度留给台词区(仅宽屏并排布局) */
+@media (min-width: 1025px) {
+  .play-layout.panel-on:not(:fullscreen) .video-section {
+    flex: 0 0 auto;
+    width: fit-content;
+  }
+
+  .play-layout.panel-on:not(:fullscreen) .video-wrap {
+    aspect-ratio: 16 / 9;
+  }
 }
 
 video {
@@ -619,29 +693,26 @@ video {
 
 .controls {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px 20px;
+  align-items: center;
+  gap: 12px;
+  height: var(--controls-h);
+  box-sizing: border-box;
+  padding: 0 16px;
   background: linear-gradient(180deg, var(--card), var(--bg));
+  border-top: 2px solid var(--border);
 }
 
-.controls-bar {
+.controls-right {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.controls-group {
-  display: flex;
-  align-items: center;
-  gap: 14px;
+  gap: 8px;
 }
 
 .play-btn {
   flex: 0 0 auto;
-  width: 58px;
-  height: 58px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: var(--grad-blue);
   color: #fff;
@@ -662,12 +733,10 @@ video {
   box-shadow: var(--shadow-sm);
 }
 
-.progress-area {
-  width: 100%;
-}
-
 .progress-track {
   position: relative;
+  flex: 1 1 auto;
+  min-width: 60px;
   height: 14px;
   background: var(--border);
   border-radius: 999px;
@@ -703,27 +772,23 @@ video {
   transform: scale(1.15);
 }
 
-.time-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 10px;
-}
-
 .time {
+  flex: 0 0 auto;
   font-family: var(--font-mono);
-  font-size: 16px;
-  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--secondary);
+  white-space: nowrap;
 }
 
 .rate-select {
-  min-height: 48px;
-  padding: 8px 38px 8px 18px;
+  min-height: 40px;
+  padding: 6px 34px 6px 14px;
   border-radius: 999px;
   background-color: #fff;
   border: 2px solid var(--border);
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--blue);
   box-shadow: var(--shadow-pop);
@@ -739,36 +804,19 @@ video {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-size: 13px;
   color: var(--muted);
 }
 
 .volume-area input[type='range'] {
-  width: 90px;
+  width: 80px;
   padding: 0;
   min-height: auto;
   border: none;
   background: transparent;
   accent-color: var(--blue);
   box-shadow: none;
-}
-
-.controls-extras {
-  gap: 8px;
-}
-
-.repeat-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.repeat-btn {
-  min-width: 150px;
-  min-height: 56px;
-  font-size: 18px;
-  gap: 8px;
 }
 
 .toast {
@@ -862,30 +910,71 @@ video {
 @media (max-width: 1024px) {
   .play-layout {
     flex-direction: column;
+    overflow: hidden;
   }
   .video-section {
     position: static;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .video-wrap {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+  .controls {
+    height: auto;
+  }
+  .subtitle-drawer {
+    display: none;
   }
   .subtitle-drawer.open {
-    width: 100%;
-    min-width: auto;
+    display: flex;
+    position: absolute;
+    right: 20px;
+    top: 16px;
+    bottom: 20px;
+    width: 360px;
+    min-width: 320px;
+    max-width: none;
     margin-left: 0;
-    margin-top: 20px;
+    z-index: 50;
   }
 }
 
 @media (max-width: 640px) {
-  .controls-bar {
-    flex-wrap: wrap;
+  .play-layout {
+    padding: 12px;
   }
-  .controls-group {
+  .controls {
     flex-wrap: wrap;
+    gap: 10px;
+    height: auto;
+    min-height: var(--controls-h);
+    padding: 10px 14px;
+  }
+  .progress-track {
+    order: 10;
+    flex-basis: 100%;
+  }
+  .controls-right {
+    justify-content: flex-start;
+    margin-left: auto;
   }
   .volume-area {
     flex: 1;
   }
-  .title-group {
-    width: 100%;
+  .subtitle-drawer.open {
+    inset: 12px;
+    width: auto;
+    min-width: auto;
+  }
+  .drawer-header {
+    padding: 14px 16px 12px;
+  }
+  .drawer-title {
+    font-size: 20px;
   }
 }
 </style>

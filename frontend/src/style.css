@@ -43,6 +43,9 @@
   --layout-width: 80%;
   --layout-max: 1480px;
 
+  /* ---- 顶栏高度:播放页一屏固定时据此扣除,避免页面滚动 ---- */
+  --appbar-h: 70px;
+
   /* ---- 阴影:柔和紫调 + 卡通硬投影 ---- */
   --shadow: 0 16px 32px -16px rgba(93, 66, 165, 0.32), 0 4px 12px -6px rgba(93, 66, 165, 0.14);
   --shadow-sm: 0 8px 18px -12px rgba(93, 66, 165, 0.38);
@@ -740,6 +743,7 @@ tbody tr:hover {
   :root {
     /* 窄屏回到满宽,顶栏与页面一起变 */
     --layout-width: 100%;
+    --appbar-h: 66px;
   }
   body {
     font-size: 16px;

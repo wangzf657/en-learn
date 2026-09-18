@@ -1,72 +1,57 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SubtitlePanel from '../components/SubtitlePanel.vue'
 
 const sentences = [
-  { en: 'Hello there', zh: '你好', words: [{ w: 'hello', phonetic: 'həˈloʊ', note: '打招呼' }] },
+  { start: 1.2, end: 4.5, en: 'Hello there', zh: '你好', words: [{ w: 'hello', phonetic: 'həˈloʊ', note: '打招呼' }] },
+  { start: 5.0, end: 8.0, en: 'How are you?', zh: '你好吗？' },
 ]
 
-describe('SubtitlePanel 朗读(TTS)', () => {
-  let synth
-  let utterances
+describe('SubtitlePanel 台词面板', () => {
+  const mountPanel = (props = {}) =>
+    mount(SubtitlePanel, { props: { title: '台词', sentences, ...props } })
 
-  beforeEach(() => {
-    utterances = []
-    synth = { speak: vi.fn((u) => utterances.push(u)), cancel: vi.fn(), resume: vi.fn() }
-    window.speechSynthesis = synth
-    window.SpeechSynthesisUtterance = class {
-      constructor(text) {
-        this.text = text
-      }
-    }
-  })
-
-  afterEach(() => {
-    delete window.speechSynthesis
-    delete window.SpeechSynthesisUtterance
-  })
-
-  const mountPanel = () => mount(SubtitlePanel, { props: { title: '台词', sentences } })
-
-  it('点击朗读按钮朗读整句,语速 0.9 且 lang=en-US,不触发 seek', async () => {
+  it('默认点击卡片触发 seek 并跳转,不触发 repeat', async () => {
     const wrapper = mountPanel()
-    await wrapper.find('.speak-btn').trigger('click')
+    const cards = wrapper.findAll('.sentence-card')
+    await cards[1].trigger('click')
 
-    expect(synth.speak).toHaveBeenCalledTimes(1)
-    expect(utterances[0].text).toBe('Hello there')
-    expect(utterances[0].rate).toBe(0.9)
-    expect(utterances[0].lang).toBe('en-US')
+    expect(wrapper.emitted('seek')).toHaveLength(1)
+    expect(wrapper.emitted('seek')[0][0]).toMatchObject({ start: 5 })
+    expect(wrapper.emitted('repeat')).toBeUndefined()
+  })
+
+  it('card-action=repeat 时点击卡片触发 repeat,不触发 seek', async () => {
+    const wrapper = mountPanel({ cardAction: 'repeat' })
+    const cards = wrapper.findAll('.sentence-card')
+    await cards[0].trigger('click')
+
+    expect(wrapper.emitted('repeat')).toHaveLength(1)
+    expect(wrapper.emitted('repeat')[0][0]).toMatchObject({ start: 1.2 })
     expect(wrapper.emitted('seek')).toBeUndefined()
   })
 
-  it('朗读中再点一次 = cancel 且状态归位', async () => {
+  it('时间戳按钮点击触发 seek,且不冒泡到卡片', async () => {
+    const wrapper = mountPanel({ cardAction: 'repeat' })
+    const btn = wrapper.findAll('.seek-btn')[1]
+
+    await btn.trigger('click')
+
+    expect(wrapper.emitted('seek')).toHaveLength(1)
+    expect(wrapper.emitted('seek')[0][0]).toMatchObject({ start: 5 })
+    // repeat 不应被触发
+    expect(wrapper.emitted('repeat')).toBeUndefined()
+  })
+
+  it('时间戳按钮显示该句起始时间', () => {
     const wrapper = mountPanel()
-    const btn = wrapper.find('.speak-btn')
-
-    await btn.trigger('click')
-    expect(btn.classes()).toContain('speaking')
-
-    await btn.trigger('click')
-    expect(synth.cancel).toHaveBeenCalled()
-    expect(wrapper.find('.speak-btn').classes()).not.toContain('speaking')
+    const btns = wrapper.findAll('.seek-btn')
+    expect(btns[0].text()).toContain('0:01')
+    expect(btns[1].text()).toContain('0:05')
   })
 
   it('不再渲染词块(详情收敛到练习弹窗)', () => {
     const wrapper = mountPanel()
     expect(wrapper.find('.word-chip').exists()).toBe(false)
-  })
-
-  it('无 speechSynthesis 时点击不报错', async () => {
-    delete window.speechSynthesis
-    const wrapper = mountPanel()
-    await wrapper.find('.speak-btn').trigger('click')
-    expect(wrapper.find('.speak-btn').exists()).toBe(true)
-  })
-
-  it('卸载时 cancel 清理', async () => {
-    const wrapper = mountPanel()
-    await wrapper.find('.speak-btn').trigger('click')
-    wrapper.unmount()
-    expect(synth.cancel).toHaveBeenCalled()
   })
 })
