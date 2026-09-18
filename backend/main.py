@@ -238,7 +238,8 @@ def get_day(date: str):
     root = library_config()["root"]
     materials = []
     for r in sorted(rows, key=material_key):
-        has_srt = bool(root) and (Path(root) / r["rel_path"]).with_suffix(".srt").is_file()
+        p = Path(root) / r["rel_path"]
+        has_srt = bool(root) and (p.parent / p.stem / (p.stem + ".srt")).is_file()
         materials.append(
             {
                 "id": r["id"],
@@ -298,13 +299,120 @@ def srt(mid: int):
         r = conn.execute("SELECT rel_path FROM materials WHERE id = ?", (mid,)).fetchone()
     if not r:
         raise HTTPException(404, "素材不存在")
-    path = (Path(root) / r["rel_path"]).with_suffix(".srt")
+    p = Path(root) / r["rel_path"]
+    path = p.parent / p.stem / (p.stem + ".srt")
     if not path.is_file():
         raise HTTPException(404, "字幕文件不存在")
     return PlainTextResponse(
         path.read_text(encoding="utf-8-sig"),
         media_type="text/plain; charset=utf-8",
     )
+
+
+# ---------------------------------------------------------------- 复习中心
+
+IMG_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
+DOC_EXT = {".pdf"}
+MEDIA_TYPES = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    ".svg": "image/svg+xml", ".pdf": "application/pdf",
+}
+
+
+def review_files(course_id: int, material_id: int, folder: Path) -> list:
+    if not folder.is_dir():
+        return []
+    out = []
+    for f in folder.iterdir():
+        if not f.is_file():
+            continue
+        ext = f.suffix.lower()
+        if ext in IMG_EXT:
+            kind = "image"
+        elif ext in DOC_EXT:
+            kind = "pdf"
+        else:
+            continue
+        out.append({
+            "name": f.name,
+            "url": f"/api/review/file/{course_id}/{material_id or 0}/{f.name}",
+            "kind": kind,
+        })
+    # 排序:PDF 优先,同类型内按文件名自然排序
+    return sorted(out, key=lambda x: (0 if x["kind"] == "pdf" else 1, natural_key(x["name"])))
+
+
+@app.get("/api/review")
+def review():
+    root = library_config()["root"]
+    if not root:
+        return {"groups": []}
+    with closing(db()) as conn, conn:
+        rows = conn.execute(
+            "SELECT m.id, m.course_id, m.title, m.rel_path, "
+            "c.name AS course_name, c.rel_path AS course_rel_path "
+            "FROM materials m JOIN courses c ON c.id = m.course_id "
+            "WHERE m.read_at IS NOT NULL"
+        ).fetchall()
+    root_dir = Path(root)
+    groups = []
+    courses = {}
+    for r in rows:
+        courses.setdefault(r["course_id"], r)
+    for r in sorted(courses.values(), key=lambda x: natural_key(x["course_name"])):
+        files = review_files(
+            r["course_id"], 0, root_dir / r["course_rel_path"] / r["course_name"]
+        )
+        if files:
+            groups.append({
+                "kind": "course", "courseId": r["course_id"],
+                "courseName": r["course_name"], "materialId": None,
+                "title": r["course_name"], "files": files,
+            })
+    for r in sorted(rows, key=lambda x: natural_key(x["title"])):
+        p = Path(r["rel_path"])
+        files = review_files(r["course_id"], r["id"], root_dir / p.parent / p.stem)
+        if files:
+            groups.append({
+                "kind": "material", "courseId": r["course_id"],
+                "courseName": r["course_name"], "materialId": r["id"],
+                "title": r["title"], "files": files,
+            })
+    return {"groups": groups}
+
+
+@app.get("/api/review/file/{courseId}/{materialId}/{filename}")
+def review_file(courseId: int, materialId: int, filename: str):
+    root = library_config()["root"]
+    if not root:
+        raise HTTPException(422, "未配置统一前缀")
+    with closing(db()) as conn, conn:
+        c = conn.execute(
+            "SELECT name, rel_path FROM courses WHERE id = ?", (courseId,)
+        ).fetchone()
+        if not c:
+            raise HTTPException(404, "课程不存在")
+        if materialId == 0:
+            folder = Path(root) / c["rel_path"] / c["name"]
+        else:
+            m = conn.execute(
+                "SELECT rel_path FROM materials WHERE id = ? AND course_id = ?",
+                (materialId, courseId),
+            ).fetchone()
+            if not m:
+                raise HTTPException(404, "素材不存在")
+            p = Path(m["rel_path"])
+            folder = Path(root) / p.parent / p.stem
+    if "/" in filename or "\\" in filename:
+        raise HTTPException(422, "非法文件名")
+    target = folder / filename
+    if target.resolve().parent != folder.resolve() or not target.is_file():
+        raise HTTPException(404, "文件不存在")
+    media = MEDIA_TYPES.get(target.suffix.lower())
+    if not media:
+        raise HTTPException(404, "文件不存在")
+    return FileResponse(target, media_type=media)
 
 
 # ---------------------------------------------------------------- 通用设置
@@ -366,7 +474,7 @@ def admin_courses_import(body: CourseImportIn):
     valid, skipped = [], []
     for f in files:
         subtitle = '{"sentences":[]}'
-        sub_file = f.with_suffix(".json")
+        sub_file = f.parent / f.stem / (f.stem + ".json")
         if sub_file.is_file():
             try:
                 subtitle = normalize_subtitle(sub_file.read_text(encoding="utf-8"))

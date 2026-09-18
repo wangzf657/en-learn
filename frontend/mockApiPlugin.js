@@ -448,6 +448,27 @@ export default function mockApiPlugin() {
           return sendJson(res, 200, { ok: true })
         }
 
+        // GET /api/review
+        if (url === "/review" && req.method === "GET") {
+          const svgImg = "data:image/svg+xml," + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240">' +
+            '<rect width="100%" height="100%" rx="16" fill="#ffe0ec"/>' +
+            '<text x="50%" y="50%" font-size="30" text-anchor="middle" fill="#b04b8f">示例复习卡</text></svg>'
+          )
+          const groups = []
+          const readMats = materials.filter((m) => m.read)
+          const courseIds = [...new Set(readMats.map((m) => m.courseId))]
+          for (const cid of courseIds) {
+            const c = courses.find((x) => x.id === cid)
+            if (!c) continue
+            groups.push({ kind: "course", courseId: cid, courseName: c.name, materialId: null, title: c.name, files: [{ name: "课程总览.svg", url: svgImg, kind: "image" }] })
+          }
+          for (const m of readMats) {
+            groups.push({ kind: "material", courseId: m.courseId, courseName: courses.find((x) => x.id === m.courseId)?.name || "", materialId: m.id, title: m.title, files: [{ name: "笔记.svg", url: svgImg, kind: "image" }] })
+          }
+          return sendJson(res, 200, { groups })
+        }
+
         return sendJson(res, 404, { detail: "mock 未实现" })
       })
     },

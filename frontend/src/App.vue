@@ -32,6 +32,13 @@ onMounted(() => {
           </svg>
           <span>自由播放</span>
         </router-link>
+        <router-link to="/review" class="nav-link" :class="{ active: route.path === '/review' }">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+          </svg>
+          <span>复习</span>
+        </router-link>
         <router-link to="/admin" class="nav-link icon-link" :class="{ active: route.path === '/admin' }" aria-label="后台管理" title="后台管理">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>

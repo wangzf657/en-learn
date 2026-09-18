@@ -181,7 +181,7 @@ def check_pair(srt: Path, js: Path):
 
 def cmd_draft(args):
     src = Path(args.path)
-    srts = sorted(src.glob("*.srt")) if src.is_dir() else [src]
+    srts = sorted(src.rglob("*.srt")) if src.is_dir() else [src]
     if not srts or not all(p.is_file() for p in srts):
         sys.exit(f"ERROR 找不到 SRT: {args.path}")
     for srt in srts:
@@ -201,7 +201,7 @@ def cmd_check(args):
     paths = [Path(p) for p in args.paths]
     if len(paths) == 1 and paths[0].is_dir():
         pairs = []
-        for srt in sorted(paths[0].glob("*.srt")):
+        for srt in sorted(paths[0].rglob("*.srt")):
             js = srt.with_suffix(".json")
             if js.exists():
                 pairs.append((srt, js))

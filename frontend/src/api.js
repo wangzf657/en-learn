@@ -44,6 +44,12 @@ export const dayApi = {
   },
 }
 
+export const reviewApi = {
+  get() {
+    return request('/review')
+  },
+}
+
 export const adminApi = {
   getLibrary() {
     return request('/admin/library')

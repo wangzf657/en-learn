@@ -124,19 +124,27 @@ def main():
     # 主课程文件夹:5 有效素材(3.gamma 坏字幕),另有子文件夹与非 mp4
     SRC.mkdir()
     (SRC / "1.alpha.mp4").write_bytes(os.urandom(1024 * 1024))
-    (SRC / "1.alpha.srt").write_bytes(
+    (SRC / "1.alpha").mkdir()
+    (SRC / "1.alpha" / "1.alpha.srt").write_bytes(
         "\ufeff1\r\n00:00:00,000 --> 00:00:01,000\r\nHello\r\n".encode("utf-8"))
     (SRC / "2.beta.mp4").write_bytes(b"")
-    (SRC / "2.beta.json").write_text(
+    (SRC / "2.beta").mkdir()
+    (SRC / "2.beta" / "2.beta.json").write_text(
         json.dumps({"sentences": [{"start": 0.0, "end": 1.0, "en": "Hi."}]}), encoding="utf-8")
     (SRC / "3.gamma.mp4").write_bytes(b"")
-    (SRC / "3.gamma.json").write_text("{bad json", encoding="utf-8")
+    (SRC / "3.gamma").mkdir()
+    (SRC / "3.gamma" / "3.gamma.json").write_text("{bad json", encoding="utf-8")
     (SRC / "4.delta.mp4").write_bytes(b"")
     (SRC / "5.epsilon.mp4").write_bytes(b"")
     (SRC / "10.omega.mp4").write_bytes(b"")
     (SRC / "notes.txt").write_text("x", encoding="utf-8")
     (SRC / "sub").mkdir()
     (SRC / "sub" / "99.inner.mp4").write_bytes(b"")
+    # 复习资料:课程同名文件夹 + 素材同名文件夹
+    (SRC / "wow_s1").mkdir()
+    (SRC / "wow_s1" / "01_overview.jpg").write_bytes(b"jpeg-bytes")
+    (SRC / "2.beta" / "notes.jpg").write_bytes(b"jpeg-bytes")
+    (SRC / "2.beta" / "zz_summary.pdf").write_bytes(b"pdf-bytes")
 
     SRC2.mkdir()
     for name in ("1.one.mp4", "2.two.mp4", "3.three.mp4"):
@@ -344,6 +352,9 @@ def main():
         check("srt 素材不存在 404", s == 404, b[:60])
 
         # --- 打卡置已读 ---
+        s, b, _ = req("GET", "/api/review")
+        check("review 未打卡无组", s == 200 and json.loads(b)["groups"] == [], b[:120])
+
         s, b, _ = req("POST", "/api/day/2026-09-01/checkin")
         check("checkin 首次 ok", s == 200 and json.loads(b) == {"ok": True}, b[:40])
         s, b, _ = req("GET", f"/api/admin/courses/{wow_id}")
@@ -359,6 +370,31 @@ def main():
         s, b, _ = req("GET", "/api/calendar?month=2026-09")
         cal = {x["date"]: x for x in json.loads(b)["days"]}
         check("calendar 已打卡", cal["2026-09-01"]["checked"] is True, b[:120])
+
+        # --- 复习中心 ---
+        s, b, _ = req("GET", "/api/review")
+        groups = json.loads(b)["groups"]
+        cg = next((g for g in groups if g["kind"] == "course"), None)
+        mg = next((g for g in groups if g["kind"] == "material"), None)
+        check("review 课程组+素材组且课程在前",
+              s == 200 and [g["kind"] for g in groups] == ["course", "material"], b[:250])
+        check("review 课程组形状", cg and cg["courseId"] == wow_id and cg["materialId"] is None
+              and cg["title"] == "wow_s1"
+              and [f["name"] for f in cg["files"]] == ["01_overview.jpg"]
+              and cg["files"][0]["kind"] == "image"
+              and cg["files"][0]["url"] == f"/api/review/file/{wow_id}/0/01_overview.jpg", b[:300])
+        check("review 素材组形状(alpha 无图不出组;PDF 优先再按名)", mg and mg["courseId"] == wow_id
+              and mg["materialId"] == m_beta and mg["title"] == "beta"
+              and [f["name"] for f in mg["files"]] == ["zz_summary.pdf", "notes.jpg"]
+              and [f["kind"] for f in mg["files"]] == ["pdf", "image"]
+              and mg["files"][1]["url"] == f"/api/review/file/{wow_id}/{m_beta}/notes.jpg", b[:300])
+        s, b, h = req("GET", f"/api/review/file/{wow_id}/0/01_overview.jpg")
+        ct = next((v for k, v in h.items() if k.lower() == "content-type"), "")
+        check("review 课程图片 200 image/jpeg", s == 200 and "image/jpeg" in ct, f"status={s} ct={ct}")
+        s, b, _ = req("GET", f"/api/review/file/{wow_id}/{m_beta}/notes.jpg")
+        check("review 素材图片 200", s == 200, f"status={s}")
+        s, b, _ = req("GET", f"/api/review/file/{wow_id}/0/..%2F..%2Fetc")
+        check("review 非法文件名 422/404", s in (422, 404), f"status={s} {b[:60]}")
 
         # --- 手动已读切换 ---
         s, b, _ = req("PUT", f"/api/admin/materials/{m_epsilon}/read", {"read": True})
