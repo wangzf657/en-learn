@@ -71,3 +71,14 @@ echoic/providers/unisound.py # 云知声 sacalleval HTTP API(线上 provider)
 ## 开发要求
 - **无登录无云端**:单机自用,无用户系统、无云存储、无云 API 调用
 - **更新文档**:唯一需求/设计文档 `docs/design.md`(V1.0),改动按它的口径同步;新迭代方向记 `docs/v1.1.md`
+
+## Repository Map
+
+A full codemap is available at `codemap.md` in the project root.
+
+Before working on any task, read `codemap.md` to understand:
+- Project architecture and entry points
+- Directory responsibilities and design patterns
+- Data flow and integration points between modules
+
+For deep work on a specific folder, also read that folder's `codemap.md`.

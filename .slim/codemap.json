@@ -1,0 +1,73 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "last_run": "2026-09-20T07:11:52.277Z",
+    "root": "D:\\workspace\\aha\\en-learn",
+    "include_patterns": [
+      "backend/**/*.py",
+      "backend/requirements.txt",
+      "frontend/src/**/*.js",
+      "frontend/src/**/*.vue",
+      "frontend/*.js",
+      "frontend/*.json",
+      "frontend/index.html",
+      "build.bat"
+    ],
+    "exclude_patterns": [
+      "**/*_test.py",
+      "**/smoke_test.py",
+      "**/*.spec.js",
+      "frontend/src/tests/**",
+      "**/package-lock.json",
+      "**/node_modules/**",
+      "**/dist/**"
+    ],
+    "exceptions": [
+      "README.md"
+    ]
+  },
+  "file_hashes": {
+    "README.md": "5a82c1b794fe8d24cd8b357e2d8911bf",
+    "backend/echoic/__init__.py": "0b4691668d00e1f3f4c3860c905ce25a",
+    "backend/echoic/providers/__init__.py": "3563c8a87634f509685062d9d8ef0fc9",
+    "backend/echoic/providers/base.py": "53e38b52bc5da5bce9d864ce1e958337",
+    "backend/echoic/providers/mock.py": "b7d668b14ba94e3da024894a52319f21",
+    "backend/echoic/providers/unisound.py": "78ccb39c8062ecd732aefaffd171c341",
+    "backend/echoic/schemas.py": "24bba10737c226110eeef1c1a291e741",
+    "backend/main.py": "b850e601973dd6edec9c7697f182809e",
+    "backend/requirements.txt": "c8af228bdeda7785a53ccb97ea52528c",
+    "build.bat": "6acf496647fd764996d45b43e9538acf",
+    "frontend/index.html": "0dbc527935f45fc98a1a67f169fae1ef",
+    "frontend/mockApiPlugin.js": "7d8788fd78a075f3aae6b82ebf123b85",
+    "frontend/package.json": "7c7a1931387981373017916aef936302",
+    "frontend/src/App.vue": "2fea56ac5d8ab2d509648d3b99c972a7",
+    "frontend/src/api.js": "c2d161336bd7802ac34e718645b12d39",
+    "frontend/src/components/RepeatModal.vue": "8ea09741ffbda785e10fe04553d468c2",
+    "frontend/src/components/SubtitleOverlay.vue": "175e793880bb48e35c403f4603ef3fb8",
+    "frontend/src/components/SubtitlePanel.vue": "bd4c5d4dc5bfce660e21031684836b07",
+    "frontend/src/components/SubtitleStylePicker.vue": "8864f04357a8b4ee9560c3f0733a5bc5",
+    "frontend/src/main.js": "853d7cfba77bc29d6c6e1502257d1615",
+    "frontend/src/utils/date.js": "c1dca8a794fe139d55b742367d967d6f",
+    "frontend/src/utils/recorder.js": "19e42afcf014063918883b0446e1e6dc",
+    "frontend/src/utils/srt.js": "72012a978d0b2bfb84298f9cefe1ec25",
+    "frontend/src/utils/tts.js": "dab6af9cd49c196397dccd46a36af410",
+    "frontend/src/views/Admin.vue": "9a7608f6ae2621080e288a8737037f50",
+    "frontend/src/views/Home.vue": "cb12460008035336c307b2e293f7d9c3",
+    "frontend/src/views/LocalPlay.vue": "ede5e1188c5253ba67f1e59519ad7225",
+    "frontend/src/views/Play.vue": "8da1be1262e5fdf03fe941d29c7b9546",
+    "frontend/src/views/Review.vue": "60ecf51a61a48d234c395b0615acef9b",
+    "frontend/vite.config.js": "823d91b9ee4defb94e1a198b7823f2b9",
+    "frontend/vitest.config.js": "91e4ad88abe623c897969ab59993263a"
+  },
+  "folder_hashes": {
+    ".": "c83485736b8cb406ef678f10d3afbd0e",
+    "backend": "3d8df8f27b1164252afc0b3d334e45f5",
+    "backend/echoic": "652085b75306450ec65cfa95a485616b",
+    "backend/echoic/providers": "935b82608b94fc7f7ff9f1192d750417",
+    "frontend": "fe8ee0c6b5cea58cf877a2236b39a9da",
+    "frontend/src": "418d401a4129fe96f490adf006e2dddd",
+    "frontend/src/components": "79bed79cba9e3346cf8ebc497470ebb5",
+    "frontend/src/utils": "c3420f9e9d4957f9d5b35f9694979d10",
+    "frontend/src/views": "ea4d4c8681b6ecb137376315650456f6"
+  }
+}
