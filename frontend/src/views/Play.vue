@@ -21,8 +21,7 @@ const toast = ref('')
 const celebrate = ref(false)
 
 const srtCues = ref([])
-const subtitleStyle = ref('sub-cinema')
-const subtitleSize = ref('sub-size-lg')
+const subtitleStyle = ref('sub-off')
 
 const videoEl = ref(null)
 const progressEl = ref(null)
@@ -327,7 +326,7 @@ onBeforeUnmount(() => {
             :current-time="currentTime"
             :enabled="subtitleStyle !== 'sub-off'"
             :style-class="subtitleStyle"
-            :size="subtitleSize"
+            size="sub-size-lg"
           />
         </div>
 
@@ -411,7 +410,7 @@ onBeforeUnmount(() => {
               </svg>
             </button>
 
-            <SubtitleStylePicker v-model="subtitleStyle" v-model:size="subtitleSize" />
+            <SubtitleStylePicker v-model="subtitleStyle" />
           </div>
         </div>
       </section>

@@ -102,7 +102,7 @@ describe('LocalPlay.vue course playback', () => {
     expect(wrapper.text()).toContain('课程库为空')
   })
 
-  it('switches subtitle style classes', async () => {
+  it('switches subtitle style classes (default off, size fixed to large)', async () => {
     const { wrapper } = await mountWithRouter(LocalPlay, {}, '/local')
 
     await wrapper.find('.course-header').trigger('click')
@@ -111,10 +111,14 @@ describe('LocalPlay.vue course playback', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     const overlay = wrapper.findComponent({ name: 'SubtitleOverlay' })
-    expect(overlay.classes()).toContain('sub-cinema')
-
-    await wrapper.find('.style-select').setValue('sub-off')
+    // 默认关闭字幕,字号固定为大
     expect(overlay.classes()).toContain('sub-off')
+    expect(overlay.classes()).toContain('sub-size-lg')
+    expect(wrapper.find('.size-select').exists()).toBe(false)
+
+    await wrapper.find('.style-select').setValue('sub-cinema')
+    expect(overlay.classes()).toContain('sub-cinema')
+    expect(overlay.classes()).not.toContain('sub-off')
   })
 
   it('plays from the clicked sentence start without pausing at its end', async () => {

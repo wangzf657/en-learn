@@ -219,24 +219,26 @@ describe('Play.vue core interactions', () => {
     expect(wrapper.findAll('.sentence-card')[0].find('.en').text()).toBe('Table for two.')
   })
 
-  it('loads SRT cues and switches subtitle style and size via selects', async () => {
+  it('loads SRT cues and switches subtitle style via select (size fixed to large)', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
     await new Promise((r) => setTimeout(r, 10))
 
     const overlay = wrapper.findComponent({ name: 'SubtitleOverlay' })
     expect(overlay.exists()).toBe(true)
-    expect(overlay.classes()).toContain('sub-cinema')
+    // 默认关闭字幕
+    expect(overlay.classes()).toContain('sub-off')
+    // 字号固定为“大”,不再提供下拉
     expect(overlay.classes()).toContain('sub-size-lg')
+    expect(wrapper.find('.size-select').exists()).toBe(false)
 
     await wrapper.find('.style-select').setValue('sub-opaque')
     expect(overlay.classes()).toContain('sub-opaque')
-
-    await wrapper.find('.size-select').setValue('sub-size-xl')
-    expect(overlay.classes()).toContain('sub-size-xl')
+    expect(overlay.classes()).not.toContain('sub-off')
+    expect(overlay.classes()).toContain('sub-size-lg')
 
     // 设置持久化,刷新后仍生效
     expect(localStorage.getItem('enlearn.subtitleStyle')).toBe('sub-opaque')
-    expect(localStorage.getItem('enlearn.subtitleSize')).toBe('sub-size-xl')
+    expect(localStorage.getItem('enlearn.subtitleSize')).toBeNull()
   })
 
   it('clicks manual checkin button, calls checkin endpoint and shows checked badge', async () => {

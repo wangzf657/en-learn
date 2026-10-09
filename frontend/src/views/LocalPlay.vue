@@ -19,8 +19,7 @@ const playing = ref(false)
 const srtCues = ref([])
 const sentences = ref([])
 const error = ref('')
-const subtitleStyle = ref('sub-cinema')
-const subtitleSize = ref('sub-size-lg')
+const subtitleStyle = ref('sub-off')
 const loadingCourses = ref(false)
 const loadingMaterials = ref(new Set())
 const isFullscreen = ref(false)
@@ -229,7 +228,7 @@ onBeforeUnmount(() => {
             :current-time="currentTime"
             :enabled="subtitleStyle !== 'sub-off'"
             :style-class="subtitleStyle"
-            :size="subtitleSize"
+            size="sub-size-lg"
           />
         </div>
 
@@ -285,8 +284,7 @@ onBeforeUnmount(() => {
               <line x1="3" y1="21" x2="10" y2="14"></line>
             </svg>
           </button>
-          <!-- eslint-disable-next-line vue/no-v-model-argument -->
-          <SubtitleStylePicker v-model="subtitleStyle" v-model:size="subtitleSize" />
+          <SubtitleStylePicker v-model="subtitleStyle" />
         </div>
 
         <div v-if="error" class="error-detail" style="margin: 0 20px 16px">{{ error }}</div>
