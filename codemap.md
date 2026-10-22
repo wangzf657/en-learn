@@ -19,7 +19,7 @@ A single-machine, self-hosted English-learning application (no login, no cloud):
 
 1. **Admin** sets library root → imports a course folder (direct-child `*.mp4` + sibling JSON subtitle) → backend upserts by `rel_path` natural key.
 2. **Admin** schedules a course over a date range → backend evenly distributes materials across days (`day_materials`).
-3. **Learner** opens a day (`/play/:date`) → video streams via HTTP Range (206), subtitles render from embedded JSON or fetched SRT.
+3. **Learner** opens a day (`/play/:date`) → video streams via HTTP Range (206), the bottom overlay renders the video's sibling same-name `.srt` verbatim (karaoke `<font>` highlight via v-html), while the side panel and repeat modal use the embedded teaching JSON.
 4. **Repeat modal** records browser-encoded 16 kHz/16-bit/mono WAV → `POST /api/score` → `echoic` facade → registered provider (`mock`/`unisound`) → 0–100 normalized scores.
 5. **Check-in** marks the day and stamps its still-unread materials; read items then surface their image/PDF sibling files in the review center.
 

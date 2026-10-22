@@ -56,7 +56,7 @@ function srtResponse(text) {
 
 const sampleSrt = `1
 00:00:01,200 --> 00:00:04,500
-How you doing?
+<font color="#ffff00">How</font> you doing?
 
 2
 00:00:05,000 --> 00:00:08,000
@@ -225,8 +225,9 @@ describe('Play.vue core interactions', () => {
 
     const overlay = wrapper.findComponent({ name: 'SubtitleOverlay' })
     expect(overlay.exists()).toBe(true)
-    // 默认关闭字幕
-    expect(overlay.classes()).toContain('sub-off')
+    // 默认清晰字幕
+    expect(overlay.classes()).toContain('sub-clean')
+    expect(overlay.classes()).not.toContain('sub-off')
     // 字号固定为“大”,不再提供下拉
     expect(overlay.classes()).toContain('sub-size-lg')
     expect(wrapper.find('.size-select').exists()).toBe(false)
@@ -239,6 +240,32 @@ describe('Play.vue core interactions', () => {
     // 设置持久化,刷新后仍生效
     expect(localStorage.getItem('enlearn.subtitleStyle')).toBe('sub-opaque')
     expect(localStorage.getItem('enlearn.subtitleSize')).toBeNull()
+  })
+
+  it('overlay cue comes from srt (not embedded JSON) and renders karaoke font tags', async () => {
+    const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
+    await new Promise((r) => setTimeout(r, 10))
+
+    await wrapper.find('.style-select').setValue('sub-clean')
+    const video = wrapper.find('video').element
+    await dispatchTimeUpdate(video, 2)
+
+    const cue = wrapper.find('.subtitle-cue')
+    expect(cue.exists()).toBe(true)
+    expect(cue.element.innerHTML).toContain('<font color="#ffff00">How</font>')
+    expect(cue.text()).toContain('you doing?')
+  })
+
+  it('does not fetch srt when material has no srtUrl (no sibling .srt)', async () => {
+    const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-16' } }, '/play/2026-09-16')
+    await new Promise((r) => setTimeout(r, 10))
+
+    // material 2 有 srtUrl 已请求;切到 material 3(srtUrl:null)不发 srt 请求
+    await wrapper.findAll('.chip')[1].trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(fetchCalls.some((c) => c.url === '/api/materials/2/srt')).toBe(true)
+    expect(fetchCalls.some((c) => c.url === '/api/materials/3/srt')).toBe(false)
   })
 
   it('clicks manual checkin button, calls checkin endpoint and shows checked badge', async () => {

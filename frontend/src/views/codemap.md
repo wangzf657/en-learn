@@ -17,14 +17,14 @@ All `<script setup>` Composition API; each owns its fetch lifecycle, local UI st
 - **`Play.vue`** (`/play/:date`, `props: true`) — fixed one-screen player.
   - `onMounted` sets `document.documentElement/body.style.overflow = 'hidden'` (restored on unmount); height `calc(100svh - var(--appbar-h))`.
   - Loads `dayApi.get(date)`; `currentMaterialIndex` switches day materials (chips, role=tablist); sentences come from `material.subtitle.sentences`.
-  - `loadCuesFallback()` fetches `srtUrl` + `parseSrt` only when sentences are empty; monotonic `srtReqId` discards stale responses. `cues` prefers in-memory sentences over srt cues.
+  - `loadCuesFallback()` always fetches `srtUrl` + `parseSrt` (null `srtUrl` = no overlay subtitles); monotonic `srtReqId` discards stale responses. `cues` are srt-only — the panel/repeat sentences come from embedded JSON, two independent tracks.
   - Custom controls (play, volume, draggable progress, rate select, fullscreen on `layoutRef`) mirror `<video>` events into refs; `currentIndex` maps time→sentence for panel highlighting.
   - **Global shortcuts** (window keydown; skipped when RepeatModal is open or target is editable; `preventDefault` also for focused buttons): `Space` = play/pause, `Enter` = collapse/expand the sentence drawer (`subtitleOpen`; auto-collapsed on entering fullscreen), `F11` = toggleFullscreen (Fullscreen API + `fullscreenchange` listener).
   - Checkin button → `dayApi.checkin(date)` → toast + confetti.
   - Composes all four components: SubtitleOverlay/StylePicker in the video section, SubtitlePanel (`card-action="repeat"`) + RepeatModal in the drawer.
 - **`LocalPlay.vue`** (`/local`) — free playback.
   - `adminApi.listCourses()` → accordion sidebar; expanding a course lazily `adminApi.getCourse(id)` into a `courseMaterials` cache.
-  - `playMaterial(material)` sets `video.src = /api/materials/:id/stream`, resets time, and falls back to `/api/materials/:id/srt` + `parseSrt` (same stale-response guard) when no embedded sentences.
+  - `playMaterial(material)` sets `video.src = /api/materials/:id/stream`, resets time, and always fetches `/api/materials/:id/srt` + `parseSrt` for the overlay (same stale-response guard); the panel still uses `material.subtitle.sentences`.
   - Reuses SubtitleOverlay/StylePicker/SubtitlePanel (`card-action="seek"` — card click seeks to the sentence) but has **no RepeatModal and no keyboard shortcuts**; fullscreen targets the stage element.
 - **`Review.vue`** (`/review`)
   - `reviewApi.get()` once on mount → `groups` (course-level `kind:'course'` + per-material groups; `files[]` with `{name, url, kind: 'image'|'pdf'}`).

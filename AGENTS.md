@@ -4,10 +4,10 @@
 
 ## 项目结构
 
-`en-learn` — 英语学习应用(单机自用,无登录无云端),单仓三部分;需求与设计文档:**`docs/design.md`(V1.0 唯一文档,含架构图与 API 契约)**,迭代方向 `docs/v1.1.md`(尚未实现):
+`en-learn` — 英语学习应用(单机自用,无登录无云端),单仓三部分;需求与设计文档:**`docs/v1.0.0.md`(V1.0 唯一文档,含架构图与 API 契约)**,迭代方向 `docs/v1.1.md`(尚未实现):
 
-- `backend/main.py` — 宿主后端,单文件 FastAPI + SQLite(`data/enlearn.db`),**课程 → 素材 + 打卡管理 + 通用设置**。统一前缀存 `data/library.json`(`{"root": 绝对路径}`,缺失/损坏回落空串;`GET/PUT /api/admin/library`,未配置时导入/流式 422);课程导入 `POST /api/admin/courses/import`(`{folder}`:课程=文件夹本身,只取直接子级 `*.mp4` 不递归、按文件名自然排序,标题去 `1.`/`01_`/`001-` 前缀,素材同名文件夹内的同名 `.json` 作字幕,坏字幕进 skipped 不占位;幂等键 `rel_path`——重导 UPDATE id 稳定,消失的文件保留不删);课程管理 `GET /api/admin/courses`、`GET /api/admin/courses/{id}`、`DELETE /api/admin/courses/{id}`(级联删素材+排期+清空天打卡)、`DELETE /api/admin/materials/{id}`、`PUT /api/admin/materials/{id}/read`(已读状态机,只填 NULL);打卡管理 `POST /api/admin/schedule`(`{courseId,dateFrom,dateTo}`,素材自然排序按天均分,n<d 时前 n 天各 1 后留空,可跨月,叠加幂等)、`GET /api/admin/schedule?month`、`DELETE /api/admin/schedule?month`(清空当月排期+打卡)、`POST /api/admin/day/{date}/materials`、`DELETE /api/admin/day/{date}`、`DELETE /api/admin/day/{date}/materials/{materialId}`;消费端 `/api/calendar`、`/api/day/{date}`、`POST /api/day/{date}/checkin`(按天打卡幂等,首次打卡把当天素材置已读);流/字幕 `GET /api/materials/{id}/stream|srt`(srt 从素材同名文件夹读);复习中心 `GET /api/review`(已读素材/课程的同名文件夹图片/文档按文件名自然序分组)+`GET /api/review/file/{courseId}/{materialId}/{filename}`(materialId=0=课程级,伺服图片/PDF);跟读评分 `/api/score` 与评分配置 `GET/PUT /api/admin/scoring`;服务端口 8420
-- `backend/echoic/` — **发音评分对接壳**:统一入口 `score_recording()` + provider 注册表,**已上线 mock + unisound(云知声)**,经宿主 `/api/score` 接入,真实密钥配置在 `data/scoring.json`(Admin 页可改,即时生效)。对接规约见 `docs/design.md` §7
+- `backend/main.py` — 宿主后端,单文件 FastAPI + SQLite(`data/enlearn.db`),**课程 → 素材 + 打卡管理 + 通用设置**。统一前缀存 `data/library.json`(`{"root": 绝对路径}`,缺失/损坏回落空串;`GET/PUT /api/admin/library`,未配置时导入/流式 422);课程导入 `POST /api/admin/courses/import`(`{folder}`:课程=文件夹本身,只取直接子级 `*.mp4` 不递归、按文件名自然排序,标题去 `1.`/`01_`/`001-` 前缀,素材同名文件夹内的同名 `.json` 作字幕,坏字幕进 skipped 不占位;幂等键 `rel_path`——重导 UPDATE id 稳定,消失的文件保留不删);课程管理 `GET /api/admin/courses`、`GET /api/admin/courses/{id}`、`DELETE /api/admin/courses/{id}`(级联删素材+排期+清空天打卡)、`DELETE /api/admin/materials/{id}`、`PUT /api/admin/materials/{id}/read`(已读状态机,只填 NULL);打卡管理 `POST /api/admin/schedule`(`{courseId,dateFrom,dateTo}`,素材自然排序按天均分,n<d 时前 n 天各 1 后留空,可跨月,叠加幂等)、`GET /api/admin/schedule?month`、`DELETE /api/admin/schedule?month`(清空当月排期+打卡)、`POST /api/admin/day/{date}/materials`、`DELETE /api/admin/day/{date}`、`DELETE /api/admin/day/{date}/materials/{materialId}`;消费端 `/api/calendar`、`/api/day/{date}`、`POST /api/day/{date}/checkin`(按天打卡幂等,首次打卡把当天素材置已读);流/字幕 `GET /api/materials/{id}/stream|srt`(srt=**视频同目录同名 `.srt` 实时探测**,供播放器浮层原样渲染——卡拉OK `<font>` 高亮经前端 v-html 生效;右侧台词面板与跟读走内嵌教学 JSON,两轨互不相干);复习中心 `GET /api/review`(已读素材/课程的同名文件夹图片/文档按文件名自然序分组)+`GET /api/review/file/{courseId}/{materialId}/{filename}`(materialId=0=课程级,伺服图片/PDF);跟读评分 `/api/score` 与评分配置 `GET/PUT /api/admin/scoring`;服务端口 8420
+- `backend/echoic/` — **发音评分对接壳**:统一入口 `score_recording()` + provider 注册表,**已上线 mock + unisound(云知声)**,经宿主 `/api/score` 接入,真实密钥配置在 `data/scoring.json`(Admin 页可改,即时生效)。对接规约见 `docs/v1.0.0.md` §7
 - `frontend/` — Vue 3 SPA(Vite + vue-router + vitest),构建产物 `frontend/dist/` 由宿主后端托管(未构建时返回提示)。核心交互:播放页一屏固定 + 快捷键(空格/Enter/F11)、跟读弹窗 `RepeatModal.vue`(词块/断句 TTS、空格录音、富评分展示)、字幕样式选择
 
 工作环境:`backend/.venv`(Python 3.10+,venv 在 backend 下,勿放根目录),依赖见 `backend/requirements.txt`(装入 venv)。**无 lint/CI/格式化工具**。
@@ -17,7 +17,7 @@
 DB 结构升级:`main.py` 用 `PRAGMA user_version` 打版本戳 + `MIGRATIONS` 列表原地迁移——改表结构时把 `SCHEMA_VERSION` +1 并在 `MIGRATIONS` 加 `(目标版本, SQL)`(原子执行);首次跑迁移前自动备份 `enlearn.db.bak`;数据文件比程序新时拒绝启动。老库(未打戳)首次运行自动补戳 v1,无副作用。
 
 验证手段:
-- 后端全 API 冒烟:`backend\.venv\Scripts\python.exe backend\smoke_test.py` — 自起服务、自带数据、自动清理,**覆盖统一前缀读写、课程导入(自然排序/子文件夹忽略/坏字幕跳过/重导幂等/消失文件保留)、排课均分与留空、逐天增删、素材已读状态机、删素材/删课程级联、打卡置已读、Range 206、srt、评分链路**。**会删除重建 `data/enlearn.db` 并在 finally 还原 `library.json`/`scoring.json`,别在有真实数据的库上跑**
+- 后端全 API 冒烟:`backend\.venv\Scripts\python.exe backend\smoke_test.py` — 自起服务、自带数据、自动清理,**固定独立端口 8431(`SMOKE_PORT` 可改,启动前 bind 探测占用即退出),绝不与生产常驻的 8420 相撞**;**覆盖统一前缀读写、课程导入(自然排序/子文件夹忽略/坏字幕跳过/重导幂等/消失文件保留)、排课均分与留空、逐天增删、素材已读状态机、删素材/删课程级联、打卡置已读、Range 206、srt、评分链路**。**会删除重建 `data/enlearn.db` 并在 finally 还原 `library.json`/`scoring.json`,别在有真实数据的库上跑**
 - 前端组件测试:`frontend/` 下 `npm test`(vitest)
 - 前端 mock 冒烟:`frontend/` 下 `node smoke-dev.mjs`(自设 `MOCK=1`,无需后端)
 

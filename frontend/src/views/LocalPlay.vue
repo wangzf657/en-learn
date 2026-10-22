@@ -19,20 +19,15 @@ const playing = ref(false)
 const srtCues = ref([])
 const sentences = ref([])
 const error = ref('')
-const subtitleStyle = ref('sub-off')
+const subtitleStyle = ref('sub-clean')
 const loadingCourses = ref(false)
 const loadingMaterials = ref(new Set())
 const isFullscreen = ref(false)
 const sidebarExpanded = ref(true)
 
 let srtReqId = 0
-// 浮层字幕优先同步派生自内存中的 sentences(已带 start/end/en),切换素材立即有数据不闪空;
-// 仅当 sentences 为空才用 srt 文本兜底。
-const cues = computed(() =>
-  sentences.value.length
-    ? sentences.value.map((s) => ({ start: s.start, end: s.end, text: s.en || '' }))
-    : srtCues.value,
-)
+// 浮层字幕只用视频同目录同名 .srt(原样渲染);台词面板走内嵌 JSON(sentences)。
+const cues = computed(() => srtCues.value)
 
 const currentIndex = computed(() => {
   const list = sentences.value
@@ -115,7 +110,6 @@ async function playMaterial(material) {
 
   // 序号始终递增,切换素材后丢弃迟到的 srt 响应
   const reqId = ++srtReqId
-  if (sentences.value.length) return
 
   try {
     const res = await fetch(`/api/materials/${material.id}/srt`)

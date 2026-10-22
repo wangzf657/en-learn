@@ -18,7 +18,7 @@ All are `<script setup>` SFCs communicating via props + `defineEmits`; none call
   - Rich score display: `overallScore` (mean of accuracy/fluency/completeness), 5-star mapping (score/20), grade labels (优秀→待加强), per-dimension bars, ASR standard-vs-read comparison, audio-quality badges (volume/clipping/noise/cut/too_short/empty_audio), per-word rows with accuracy color, word-type badges (`type` 0 多词/1 漏词/3 错词), stress ✓/✗, and phoneme chips colored by `phoneme_scores`.
   - Playback: hidden `<audio>` + blob URL (`URL.createObjectURL`), revoked on reset ("阅后即焚").
   - Window keydown: Space toggles recording unless typing in input/textarea/contenteditable or modal closed; `watch(open)` + `onBeforeUnmount` cleanup stops recorder/TTS/playback.
-- **`SubtitleOverlay.vue`** — stateless; props `{ cues, currentTime, enabled, styleClass='sub-cinema', size='sub-size-lg' }`.
+- **`SubtitleOverlay.vue`** — stateless; props `{ cues, currentTime, enabled, styleClass='sub-clean', size='sub-size-lg' }`; renders cue text via `v-html` so karaoke `<font>` highlight works, keyed on tag-stripped text (highlight moves patch in place; line changes replay the enter transition).
   - `currentCue` = first cue where `start <= t < end`; renders one `<p class="subtitle-cue">` keyed by text inside `<Transition name="cue" mode="out-in">`.
   - Entry-only animation — leave transition deliberately omitted so the `max-content` container never collapses mid-gap (documented in-source warning).
   - Styles are intentionally **global** (non-scoped): parent-supplied `styleClass` (`sub-clean` white / `sub-cinema` yellow display font / `sub-opaque` dark pill / `sub-off` hidden) and `size` (`sub-size-md/lg/xl` driving `--cue-size`/`--cue-size-cinema` variables, ≤640px fallbacks) must cross the scoped boundary. `aria-live="polite"`.
@@ -31,7 +31,7 @@ All are `<script setup>` SFCs communicating via props + `defineEmits`; none call
 
 ## Flow
 
-1. Play/LocalPlay pass sentence-derived cues + `currentTime` to SubtitleOverlay each tick → it recomputes the active cue.
+1. Play/LocalPlay pass srt-derived cues + `currentTime` to SubtitleOverlay each tick → it recomputes the active cue.
 2. SubtitlePanel card click → `emit('repeat', s)` → view's `openRepeat(s)` sets `{ repeatSentence, repeatOpen }` → RepeatModal opens, resets, speaks/fills from `sentence`.
 3. Space in RepeatModal → `toggleRecording()` → `startRecording()` → stop → `scoringApi.score(blob, reference)` POST `/api/score` → result rendered.
 4. Picker `@change` → emit + localStorage write → view ref updates `:style-class`/`:size` props on the overlay.

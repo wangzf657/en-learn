@@ -51,10 +51,10 @@ let courses = [
 ]
 
 let materials = [
-  { id: 1, courseId: 1, title: "日常问候", relPath: "greetings.mp4", sentenceCount: 3, read: false, readAt: null, dates: ["2026-09-14", "2026-09-15"] },
-  { id: 2, courseId: 1, title: "自我介绍", relPath: "intro.mp4", sentenceCount: 2, read: true, readAt: "2026-09-10T08:00:00Z", dates: [] },
-  { id: 3, courseId: 2, title: "点餐用语", relPath: "order.mp4", sentenceCount: 2, read: false, readAt: null, dates: ["2026-09-16"] },
-  { id: 4, courseId: 2, title: "餐厅对话", relPath: "dialog.mp4", sentenceCount: 0, read: false, readAt: null, dates: [] },
+  { id: 1, courseId: 1, title: "日常问候", relPath: "greetings.mp4", sentenceCount: 3, hasSrt: true, read: false, readAt: null, dates: ["2026-09-14", "2026-09-15"] },
+  { id: 2, courseId: 1, title: "自我介绍", relPath: "intro.mp4", sentenceCount: 2, hasSrt: true, read: true, readAt: "2026-09-10T08:00:00Z", dates: [] },
+  { id: 3, courseId: 2, title: "点餐用语", relPath: "order.mp4", sentenceCount: 2, hasSrt: true, read: false, readAt: null, dates: ["2026-09-16"] },
+  { id: 4, courseId: 2, title: "餐厅对话", relPath: "dialog.mp4", sentenceCount: 0, hasSrt: false, read: false, readAt: null, dates: [] },
 ]
 
 const scoringConfig = { provider: "mock", options: {}, providers: ["mock", "azure", "iflytek"] }
@@ -128,7 +128,8 @@ function makeDayMaterial(m) {
     id: m.id,
     title: m.title,
     videoUrl: `/api/materials/${m.id}/stream`,
-    srtUrl: `/api/materials/${m.id}/srt`,
+    // 与真实后端一致:视频同目录无同名 .srt 时 srtUrl 为 null(浮层无字幕)
+    srtUrl: m.hasSrt ? `/api/materials/${m.id}/srt` : null,
     subtitle: m.sentenceCount > 0 ? sampleSubtitle : { sentences: [] },
   }
 }
@@ -183,9 +184,11 @@ export default function mockApiPlugin() {
           })
         }
 
-        // GET /api/materials/:id/srt
+        // GET /api/materials/:id/srt(视频同目录同名 .srt;无则 404 = 无浮层字幕)
         const srtMatch = url.match(/^\/materials\/(\d+)\/srt$/)
         if (srtMatch && req.method === "GET") {
+          const m = materials.find((x) => x.id === Number(srtMatch[1]))
+          if (!m || !m.hasSrt) return sendJson(res, 404, { detail: "字幕文件不存在" })
           return sendText(res, 200, sampleSrt)
         }
 

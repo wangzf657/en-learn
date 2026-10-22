@@ -111,8 +111,9 @@ describe('LocalPlay.vue course playback', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     const overlay = wrapper.findComponent({ name: 'SubtitleOverlay' })
-    // 默认关闭字幕,字号固定为大
-    expect(overlay.classes()).toContain('sub-off')
+    // 默认清晰字幕,字号固定为大
+    expect(overlay.classes()).toContain('sub-clean')
+    expect(overlay.classes()).not.toContain('sub-off')
     expect(overlay.classes()).toContain('sub-size-lg')
     expect(wrapper.find('.size-select').exists()).toBe(false)
 

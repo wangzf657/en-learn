@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -16,7 +17,9 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-BASE = "http://127.0.0.1:8420"
+# 固定独立端口,绝不默认 8420:生产 exe 常驻 8420,共用端口会把冒烟打到生产库(历史事故)
+PORT = int(os.environ.get("SMOKE_PORT", "8431"))
+BASE = f"http://127.0.0.1:{PORT}"
 SCORING = DATA / "scoring.json"
 LIBRARY = DATA / "library.json"
 SRC = DATA / "wow_s1"
@@ -124,8 +127,8 @@ def main():
     # 主课程文件夹:5 有效素材(3.gamma 坏字幕),另有子文件夹与非 mp4
     SRC.mkdir()
     (SRC / "1.alpha.mp4").write_bytes(os.urandom(1024 * 1024))
-    (SRC / "1.alpha").mkdir()
-    (SRC / "1.alpha" / "1.alpha.srt").write_bytes(
+    # 浮层 srt = 视频同目录同名 .srt(教学 JSON 才放素材同名文件夹)
+    (SRC / "1.alpha.srt").write_bytes(
         "\ufeff1\r\n00:00:00,000 --> 00:00:01,000\r\nHello\r\n".encode("utf-8"))
     (SRC / "2.beta.mp4").write_bytes(b"")
     (SRC / "2.beta").mkdir()
@@ -154,7 +157,17 @@ def main():
     (SRC3 / "1.keep.mp4").write_bytes(b"")
     (SRC3 / "2.gone.mp4").write_bytes(b"")
 
-    env = {**os.environ, "ENLEARN_NO_BROWSER": "1"}
+    # 端口被占直接失败退出:Windows 上 SO_REUSEADDR 会放行双绑,裸 bind 是唯一可靠探测
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind(("127.0.0.1", PORT))
+    except OSError as e:
+        print(f"port {PORT} occupied, aborting: {e}")
+        sys.exit(1)
+    finally:
+        probe.close()
+
+    env = {**os.environ, "ENLEARN_NO_BROWSER": "1", "ENLEARN_PORT": str(PORT)}
     proc = subprocess.Popen(
         [sys.executable, str(ROOT / "backend" / "main.py")], env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

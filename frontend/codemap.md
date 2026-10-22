@@ -17,7 +17,7 @@ Project layer for the Vue 3 SPA: build/dev tooling, test setup, the in-memory mo
   - Installs one connect middleware via `server.middlewares.use('/api', ...)`; mounted at the `/api` prefix, so regexes match `req.url` without it.
   - Module-level mutable state: `courses`, `materials` (with `dates[]`, `read`, `readAt`), `libraryRoot`, `scoringConfig`.
   - Covers the full REST surface via regex dispatch + `sendJson`/`sendText`/`sendBinary`/`readBody` helpers; errors are FastAPI-shaped `{ detail }`.
-  - `/api/materials/:id/stream` serves `public/mock/empty.mp4` (28-byte stub); `/srt` returns a fixed SRT string; all materials share one rich `sampleSubtitle`.
+  - `/api/materials/:id/stream` serves `public/mock/empty.mp4` (28-byte stub); `/srt` returns a fixed SRT string (404 when the material has no sibling srt, mirrored by `srtUrl: null`); all materials share one rich `sampleSubtitle`.
   - `/score` parses multipart just enough to extract `reference`, returns deterministic scores (word #2 forced low to demo error badges).
 - **`smoke-dev.mjs`** — node smoke test: sets `MOCK=1`, boots Vite programmatically (`createServer`, `logLevel: 'silent'`), `fetch`es every mocked endpoint with expectation predicates, checks page shells (`/`, `/play/2026-09-14`, `/local`), closes the server, exits 1 on any failure.
 - **`index.html`** — `lang="zh-CN"`, favicon `/favicon.svg`, `#app` mount div, module script `/src/main.js`.

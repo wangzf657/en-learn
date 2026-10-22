@@ -18,7 +18,7 @@ Four dependency-free pure utility modules: calendar date math, browser WAV recor
   - Graph routes through a **zero-gain node to `destination`** (required on Chrome or the processor never fires; silent to the user).
   - Returns a controller whose `stop()` disconnects, stops tracks, closes the context, and resolves a `Blob`.
   - `pcmToWav(chunks)` hand-writes a 44-byte RIFF header — mono (1 channel), 16000 Hz, 16-bit PCM — then clamps samples to [-1, 1] and converts to little-endian `Int16`.
-- **`srt.js`** — `parseSrt(text)` → `[{ start, end, text }]` in seconds.
+- **`srt.js`** — `parseSrt(text)` → `[{ start, end, text }]` in seconds; cue text is kept verbatim (karaoke `<font>` tags survive for v-html rendering).
   - Strips BOM, normalizes CRLF/CR; splits blocks on blank lines; tolerates an optional numeric index line.
   - Parses `HH:MM:SS[,.]mmm --> ...` (comma or dot decimal separator); joins multi-line cue text with `\n`.
   - Rejects blocks without valid times and cues where `end <= start`.
@@ -32,7 +32,7 @@ Four dependency-free pure utility modules: calendar date math, browser WAV recor
 ## Flow
 
 1. Recording: RepeatModal "record" → `startRecording()` → mic streams into `chunks` → "stop" → `stop()` → `pcmToWav` → WAV blob → `scoringApi.score(blob, reference)` multipart POST `/api/score`.
-2. Subtitles: Play/LocalPlay `fetch('/api/materials/:id/srt')` → `parseSrt(text)` → cues shaped like embedded `subtitle.sentences` for SubtitleOverlay.
+2. Overlay subtitles: Play/LocalPlay `fetch('/api/materials/:id/srt')` → `parseSrt(text)` → cues for SubtitleOverlay (v-html renders karaoke highlight).
 3. TTS: app mount → `warmupTts` with saved voice; RepeatModal clicks → `new SpeechSynthesisUtterance` + `configureUtterance` → speak; Admin → `preview` + `saveTtsSettings`.
 4. Dates: Home renders `getMonthGrid` + `formatMonth` → `calendarApi.getMonth`; `todayKey()` highlights today.
 

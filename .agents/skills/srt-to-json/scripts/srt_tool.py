@@ -3,13 +3,15 @@
 
 结构权威:subtitle.schema.json(本 skill 目录);流程与质量要求:.agents/skills/srt-to-json/SKILL.md。
 
-首要规则:原 SRT 的 cue(时间戳 + 台词)是一等公民。JSON 的 sentences 与清洗后的 cue
-逐条一一对应(数量、顺序、start/end、en 文本全一致);禁止合并/拆分/改写。
-脚本只做确定性清洗与逐条透传,不做任何重组。
+首要规则:清洗后的"句"是一等公民 = 逐条独立 cue;卡拉OK式逐词高亮源(同句每高亮
+一词就重复一条 cue)的**相邻同文 cue 由脚本机械合并为一句**,时间取并集。JSON 的
+sentences 与合并后的句一一对应(数量、顺序、start/end、en 文本全一致);除该合并外
+禁止合并/拆分/改写,人和 agent 都不动结构,一切以原 SRT 为准。
 
 用法:
-  python srt_tool.py draft <文件夹 | 单个.srt> [--force]   # SRT → 结构 JSON(1 cue = 1 句)
+  python srt_tool.py draft <文件夹 | 单个.srt> [--force]   # SRT → 结构 JSON(自动合并卡拉OK同文 cue)
   python srt_tool.py check <文件夹 | a.srt a.json>         # 契约 + 逐句对齐 + 守恒校验
+  python srt_tool.py dedup <文件夹 | 单个.srt>             # 存量修复:就地合并旧 json 的相邻同文句
   python srt_tool.py selftest                              # 内置样例自检
 """
 import argparse
@@ -34,6 +36,12 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.replace("\u2019", "'").lower())
 
 
+def _tokens(s: str):
+    """切词:保留缩写内部撇号(don't),剥掉作引号的边缘撇号('Dig!' → dig)。"""
+    toks = (tok.strip("'").lower() for tok in re.findall(r"[A-Za-z']+", s.replace("\u2019", "'")))
+    return [t for t in toks if t]
+
+
 def _sec(h, m, s, ms) -> float:
     return int(h) * 3600 + int(m) * 60 + int(s) + int(ms.ljust(3, "0")) / 1000.0
 
@@ -50,6 +58,17 @@ def _clean(lines):
         if s:
             kept.append(s)
     return " ".join(kept)
+
+
+def subtitle_json_path(srt: Path) -> Path:
+    """成品 JSON 的落盘位置(导入契约,见 main.py 导入逻辑):素材同名文件夹 `<stem>/<stem>.json`,与 mp4 同级。
+
+    srt 已在同名文件夹内(规范形态)时,就是 srt 旁的同名 .json;
+    srt 平铺在课程文件夹时,落同名子文件夹(目录不存在由 draft 创建)。
+    """
+    if srt.parent.name == srt.stem:
+        return srt.with_suffix(".json")
+    return srt.parent / srt.stem / (srt.stem + ".json")
 
 
 def parse_srt(path: Path):
@@ -76,7 +95,70 @@ def parse_srt(path: Path):
                 "end": _sec(m.group(5), m.group(6), m.group(7), m.group(8)),
                 "text": body,
             })
+    return _merge_karaoke(_normalize(cues))
+
+
+def _normalize(cues):
+    """源 SRT 时间轴缺陷的确定性清洗(卡拉OK式逐词高亮字幕常见),保证红线 6:
+
+    1. 首尾颠倒(end < start,1ms 级零长高亮帧)→ 交换起止
+    2. 相邻 cue 重叠(高亮 cue 常提前开始,几毫秒到几百毫秒)→ 上一 cue 的 end 钳到本 cue 的 start
+    3. 仍零长(end ≤ start)→ 补 1ms,保 end > start;若因此压到下一 cue 再钳一次
+    """
+    for c in cues:
+        if c["end"] < c["start"]:
+            c["start"], c["end"] = c["end"], c["start"]
+    for i in range(1, len(cues)):
+        prev, cur = cues[i - 1], cues[i]
+        if cur["start"] < prev["end"]:
+            prev["end"] = cur["start"]
+    for c in cues:
+        if c["end"] <= c["start"]:
+            c["end"] = c["start"] + 0.001
+    for i in range(1, len(cues)):
+        prev, cur = cues[i - 1], cues[i]
+        if cur["start"] < prev["end"]:
+            cur["start"] = prev["end"]
+            if cur["end"] <= cur["start"]:
+                cur["end"] = cur["start"] + 0.001
     return cues
+
+
+def _merge_karaoke(cues):
+    """卡拉OK式逐词高亮源的确定性合并:相邻同文 cue 并为一句,时间取并集。
+
+    同一句在源里每个单词高亮一步就重复一条 cue(常再补一条整句长条),剥标签后
+    文本完全一致;按"相邻同文"判定(不跨非同文 cue),语义层一句只留一条。
+    须在 _normalize 之后调用(时间轴已单调不重叠,末条 end 即并集上界)。
+    """
+    out = []
+    for c in cues:
+        if out and c["text"] == out[-1]["text"]:
+            out[-1]["end"] = c["end"]
+            continue
+        out.append(dict(c))
+    return out
+
+
+def _merge_sents(sents):
+    """成品 JSON 句条目的合并(dedup 存量修复用):同 _merge_karaoke,键为 en,
+    并把后条的 zh/note/words 回填给首条(仅首条缺失时)——富化内容一条不丢。"""
+    out = []
+    for s in sents:
+        prev = out[-1] if out else None
+        if prev is not None and s.get("en") == prev.get("en"):
+            prev["end"] = s["end"]
+            for k in ("zh", "note"):
+                cur = prev.get(k)
+                if not (isinstance(cur, str) and cur.strip()):
+                    nv = s.get(k)
+                    if isinstance(nv, str) and nv.strip():
+                        prev[k] = nv
+            if not prev.get("words") and s.get("words"):
+                prev["words"] = s["words"]
+            continue
+        out.append(dict(s))
+    return out
 
 
 def _span_in(tokens, need):
@@ -99,10 +181,11 @@ def check_pair(srt: Path, js: Path):
     sents = data["sentences"]
     cues = parse_srt(srt)
 
-    # 首要规则:逐句与原 cue 对齐(数量/时间戳/文本)
+    # 首要规则:逐句与原句(卡拉OK同文 cue 已合并)对齐(数量/时间戳/文本)
     if len(sents) != len(cues):
         errs.append(
-            f"{js.name}: 句数 {len(sents)} ≠ 原 SRT cue 数 {len(cues)}(禁止合并/拆分/增删)"
+            f"{js.name}: 句数 {len(sents)} ≠ 原 SRT 句数 {len(cues)}"
+            f"(卡拉OK同文 cue 已由脚本合并;禁止再合并/拆分/增删)"
         )
 
     prev_end, all_en = None, ""
@@ -149,13 +232,13 @@ def check_pair(srt: Path, js: Path):
             else:
                 if len(ws) > 5:
                     warns.append(f"{tag}: words {len(ws)} 个 > 5,建议精简")
-                tokens = [t.lower() for t in re.findall(r"[A-Za-z']+", en.replace("\u2019", "'"))]
+                tokens = _tokens(en)
                 for j, w in enumerate(ws):
                     wtag = f"{tag} words[{j}]"
                     if not isinstance(w, dict) or not isinstance(w.get("w"), str) or not w["w"].strip():
                         errs.append(f"{wtag}: 缺 w 或非字符串")
                         continue
-                    w_tokens = [t.lower() for t in re.findall(r"[A-Za-z']+", w["w"].replace("\u2019", "'"))]
+                    w_tokens = _tokens(w["w"])
                     if not w_tokens:
                         errs.append(f"{wtag}: w '{w['w']}' 不含有效词")
                         continue
@@ -185,16 +268,61 @@ def cmd_draft(args):
     if not srts or not all(p.is_file() for p in srts):
         sys.exit(f"ERROR 找不到 SRT: {args.path}")
     for srt in srts:
-        out = srt.with_suffix(".json")
+        out = subtitle_json_path(srt)
         if out.exists() and not args.force:
-            print(f"SKIP {out.name}(已存在,--force 覆盖)")
+            print(f"SKIP {out}(已存在,--force 覆盖)")
             continue
         cues = parse_srt(srt)
         sents = [{"start": c["start"], "end": c["end"], "en": c["text"]} for c in cues]
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(
             json.dumps({"sentences": sents}, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        print(f"DRAFT {out.name}: {len(sents)} 句(1:1 对应 {len(cues)} 个 cue)")
+        print(f"DRAFT {out}: {len(sents)} 句(相邻同文卡拉OK cue 已合并)")
+
+
+def cmd_dedup(args):
+    """存量修复:旧规则生成的成品 JSON(卡拉OK重复条未合并)就地机械合并。
+
+    只按"相邻同文"合并,zh/note/words 富化字段一条不丢;合并后立即 check 全绿才算过。
+    """
+    src = Path(args.path)
+    srts = sorted(src.rglob("*.srt")) if src.is_dir() else [src]
+    if not srts or not all(p.is_file() for p in srts):
+        sys.exit(f"ERROR 找不到 SRT: {args.path}")
+    failed = False
+    for srt in srts:
+        js = subtitle_json_path(srt)
+        if not js.exists():
+            print(f"MISS {srt.stem}(无 json)")
+            continue
+        try:
+            data = json.loads(js.read_text(encoding="utf-8-sig"))
+        except Exception as e:
+            print(f"ERROR {js.name}: JSON 解析失败: {e}")
+            failed = True
+            continue
+        sents = data.get("sentences") if isinstance(data, dict) else None
+        if not isinstance(sents, list):
+            print(f"ERROR {js.name}: 必须是含 sentences 数组的对象")
+            failed = True
+            continue
+        merged = _merge_sents(sents)
+        if len(merged) == len(sents):
+            print(f"OK {js.name}: 无相邻重复,{len(sents)} 句")
+            continue
+        data["sentences"] = merged
+        js.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        errs, _ = check_pair(srt, js)
+        if errs:
+            failed = True
+            for e in errs:
+                print(f"ERROR {e}")
+        else:
+            print(f"MERGED {js.name}: {len(sents)} → {len(merged)} 句(check 全绿)")
+    sys.exit(1 if failed else 0)
 
 
 def cmd_check(args):
@@ -202,7 +330,7 @@ def cmd_check(args):
     if len(paths) == 1 and paths[0].is_dir():
         pairs = []
         for srt in sorted(paths[0].rglob("*.srt")):
-            js = srt.with_suffix(".json")
+            js = subtitle_json_path(srt)
             if js.exists():
                 pairs.append((srt, js))
             else:
@@ -246,7 +374,9 @@ what is this
 def cmd_selftest(args):
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        srt = d / "01_测试.srt"
+        sub = d / "01_测试"  # 规范形态:srt/json 都在素材同名文件夹内
+        sub.mkdir()
+        srt = sub / "01_测试.srt"
         srt.write_bytes(b"\xef\xbb\xbf" + SAMPLE_SRT.encode("utf-8"))  # 带 BOM 验证解码
         cues = parse_srt(srt)
         assert len(cues) == 3, cues  # ♪ 音乐行被清洗丢弃
@@ -256,7 +386,71 @@ def cmd_selftest(args):
             {"start": 2.3, "end": 4.5, "en": "doing?"},
             {"start": 6.1, "end": 7.9, "en": "what is this"},
         ], sents  # 1 cue = 1 句,原样(不合并/不补标点/不改大小写)
-        js = d / "01_测试.json"
+        js = srt.with_suffix(".json")
+        assert subtitle_json_path(srt) == js  # 落盘位置符合导入契约
+
+        # 源时间轴缺陷的确定性清洗:重叠钳位 / 首尾颠倒交换 / 零长补 1ms
+        sub3 = d / "03_缺陷"
+        sub3.mkdir()
+        srt3 = sub3 / "03_缺陷.srt"
+        srt3.write_text(
+            "1\n00:00:10,000 --> 00:00:11,000\nA\n\n"
+            "2\n00:00:10,800 --> 00:00:12,000\nB\n\n"
+            "3\n00:00:12,001 --> 00:00:12,000\nC\n\n"
+            "4\n00:00:12,001 --> 00:00:12,001\nD\n",
+            encoding="utf-8",
+        )
+        assert [(round(c["start"], 6), round(c["end"], 6)) for c in parse_srt(srt3)] == [
+            (10.0, 10.8),  # 重叠 200ms:上一 cue end 钳到本 cue start
+            (10.8, 12.0),
+            (12.0, 12.001),  # 首尾颠倒:交换起止
+            (12.001, 12.002),  # 零长 cue:补 1ms
+        ]
+
+        # 卡拉OK式逐词高亮源:同句每步一条 cue,相邻同文机械合并为一句(时间取并集)
+        sub4 = d / "04_卡拉OK"
+        sub4.mkdir()
+        srt4 = sub4 / "04_卡拉OK.srt"
+        srt4.write_text(
+            "1\n00:00:32,808 --> 00:00:33,245\nRaccoon: Watch me hop!\n\n"
+            "2\n00:00:33,246 --> 00:00:33,503\n"
+            'Raccoon: <font color="#ffff00">Watch</font> me hop!\n\n'
+            "3\n00:00:33,504 --> 00:00:33,733\n"
+            'Raccoon: Watch <font color="#ffff00">me</font> hop!\n\n'
+            "4\n00:00:33,734 --> 00:00:34,188\n"
+            'Raccoon: Watch me <font color="#ffff00">hop</font>!\n\n'
+            "5\n00:00:34,189 --> 00:00:40,535\nRaccoon: Watch me hop!\n\n"
+            "6\n00:00:40,536 --> 00:00:41,260\nTurtle: I can't hop.\n",
+            encoding="utf-8",
+        )
+        assert [(round(c["start"], 6), round(c["end"], 6), c["text"]) for c in parse_srt(srt4)] == [
+            (32.808, 40.535, "Raccoon: Watch me hop!"),  # 5 条同文 cue 并 1 句
+            (40.536, 41.26, "Turtle: I can't hop."),  # 下一句不同文,不并入
+        ]
+        js4 = subtitle_json_path(srt4)
+        sents4 = [{"start": c["start"], "end": c["end"], "en": c["text"]} for c in parse_srt(srt4)]
+        js4.write_text(json.dumps({"sentences": sents4}, ensure_ascii=False), encoding="utf-8")
+        errs, _ = check_pair(srt4, js4)
+        assert not errs, errs  # 合并形态与 check 自洽
+
+        # dedup 存量修复:旧 json(重复条未合并,zh 全条都有、words 只在首条)→ 合并不丢富化
+        old = [
+            {"start": 32.808, "end": 33.245, "en": "Raccoon: Watch me hop!", "zh": "浣熊:看我跳!"},
+            {"start": 33.246, "end": 33.503, "en": "Raccoon: Watch me hop!", "zh": "浣熊:看我跳!"},
+            {"start": 33.504, "end": 34.188, "en": "Raccoon: Watch me hop!", "zh": "浣熊:看我跳!"},
+            {"start": 34.189, "end": 40.535, "en": "Raccoon: Watch me hop!", "zh": "浣熊:看我跳!"},
+        ]
+        old[0]["words"] = [{"w": "watch", "note": "看"}]
+        m = _merge_sents(old)
+        assert len(m) == 1, m
+        assert (round(m[0]["start"], 6), round(m[0]["end"], 6)) == (32.808, 40.535), m
+        assert m[0]["zh"] == "浣熊:看我跳!" and m[0]["words"] == [{"w": "watch", "note": "看"}], m
+        m2 = _merge_sents([  # 首条缺 zh 时由后条回填
+            {"start": 1.0, "end": 2.0, "en": "Hi."},
+            {"start": 2.0, "end": 3.0, "en": "Hi.", "zh": "你好。"},
+        ])
+        assert m2[0]["zh"] == "你好。" and round(m2[0]["end"], 6) == 3.0, m2
+
         js.write_text(json.dumps({"sentences": sents}, ensure_ascii=False), encoding="utf-8")
         errs, _ = check_pair(srt, js)
         assert not errs, errs  # 结构层自产必须全绿
@@ -284,7 +478,9 @@ def cmd_selftest(args):
         assert any("表层连续片段" in e for e in errs) and any("斜杠" in e for e in errs), errs
 
         # 词组(表层连续片段)应合法,且须与 en 连续一致(跳词/颠倒即拦)
-        srt2 = d / "02_词组.srt"
+        sub2 = d / "02_词组"
+        sub2.mkdir()
+        srt2 = sub2 / "02_词组.srt"
         srt2.write_text(
             "1\n00:00:00,000 --> 00:00:01,000\nhello boys and girls\n",
             encoding="utf-8",
@@ -305,6 +501,23 @@ def cmd_selftest(args):
         js2.write_text(json.dumps(bad_phrase, ensure_ascii=False), encoding="utf-8")
         errs, _ = check_pair(srt2, js2)
         assert any("表层连续片段" in e for e in errs), errs  # 跳词不连续,应拦
+
+        # 单引号包裹的词('Dig!')应能匹配:作引号的撇号不并入词元
+        sub5 = d / "05_引号"
+        sub5.mkdir()
+        srt5 = sub5 / "05_引号.srt"
+        srt5.write_text(
+            "1\n00:00:00,000 --> 00:00:01,000\n\"It says, 'Dig!'\" Zippy said.\n",
+            encoding="utf-8",
+        )
+        js5 = sub5 / "05_引号.json"
+        quoted = {"sentences": [
+            {"start": 0.0, "end": 1.0, "en": "\"It says, 'Dig!'\" Zippy said.",
+             "words": [{"w": "Dig", "note": "挖"}]},
+        ]}
+        js5.write_text(json.dumps(quoted, ensure_ascii=False), encoding="utf-8")
+        errs, _ = check_pair(srt5, js5)
+        assert not errs, errs  # 引号撇号不算词的一部分
     print("selftest OK")
 
 
@@ -320,9 +533,11 @@ def main():
     d.add_argument("--force", action="store_true")
     c = sub.add_parser("check", help="校验富化后 JSON")
     c.add_argument("paths", nargs="+")
+    dd = sub.add_parser("dedup", help="存量修复:就地合并成品 JSON 相邻同文句(卡拉OK重复)")
+    dd.add_argument("path")
     sub.add_parser("selftest", help="内置样例自检")
     args = ap.parse_args()
-    {"draft": cmd_draft, "check": cmd_check, "selftest": cmd_selftest}[args.cmd](args)
+    {"draft": cmd_draft, "check": cmd_check, "dedup": cmd_dedup, "selftest": cmd_selftest}[args.cmd](args)
 
 
 if __name__ == "__main__":

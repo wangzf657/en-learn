@@ -6,10 +6,13 @@ describe('Home.vue calendar', () => {
   beforeEach(() => {
     mockFetch((url) => {
       if (url.startsWith('/api/calendar?month=')) {
+        // 首屏渲染的是当前月份,素材日期必须落在当前月,否则格子不显示(与真实后端一致)
+        const now = new Date()
+        const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-14`
         return {
           body: {
             days: [
-              { date: '2026-09-14', materialId: 1, title: '日常问候', checked: false, materialCount: 1 },
+              { date, materialId: 1, title: '日常问候', checked: false, materialCount: 1 },
             ],
           },
         }

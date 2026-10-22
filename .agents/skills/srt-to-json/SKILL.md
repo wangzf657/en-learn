@@ -1,20 +1,21 @@
 ---
 name: srt-to-json
-description: SRT 转 EnLearn 启蒙教学字幕 JSON(按原始 cue 逐条富化 zh/words/note + 契约校验 + 导入交付;时间戳/台词为一等公民,禁止合并/拆分/改写)。Use when the user says "srt 转 json"、"转字幕"、"字幕转换"、"生成教学字幕"、"富化字幕" or wants a month folder of .srt files prepared for import. Use ONLY for converting existing English SRT text — ASR 从音频生成字幕是项目非目标,不做。
+description: SRT 转 EnLearn 启蒙教学字幕 JSON(清洗合并后的句逐条富化 zh/words/note + 契约校验 + 导入交付;句为一等公民,卡拉OK式相邻同文 cue 由 srt_tool.py 机械合并,除此之外禁止合并/拆分/改写)。Use when the user says "srt 转 json"、"转字幕"、"字幕转换"、"生成教学字幕"、"富化字幕" or wants a month folder of .srt files prepared for import. Use ONLY for converting existing English SRT text — ASR 从音频生成字幕是项目非目标,不做。
 ---
 
 # SRT → 启蒙教学字幕 JSON
 
-权威分工:数据结构以本 skill 目录下的 `subtitle.schema.json`(JSON Schema,机器可读)为准;校验分层、存储传输、前端时间轴等 app 侧说明见 `docs/design.md` §4;**生产流程与质量要求的唯一权威是本文件**(原 docs/srt-to-json-design.md、docs/subtitle-contract.md 已拆分并入删除)。数据结构冲突以 schema 为准,流程冲突以本文为准。
+权威分工:数据结构以本 skill 目录下的 `subtitle.schema.json`(JSON Schema,机器可读)为准;校验分层、存储传输、前端时间轴等 app 侧说明见 `docs/v1.0.0.md`(原 docs/design.md,已改版);**生产流程与质量要求的唯一权威是本文件**(原 docs/srt-to-json-design.md、docs/subtitle-contract.md 已拆分并入删除)。数据结构冲突以 schema 为准,流程冲突以本文为准。
 
 ## 首要规则(凌驾一切,违反即返工)
 
-**原 SRT 的 cue(时间戳 + 台词)是一等公民。** JSON 的 `sentences` 必须与 SRT 清洗后的 cue **逐条一一对应、顺序不变**:第 i 句的 `start/end` 就是第 i 个 cue 的起止时间,`en` 就是该 cue 的清洗后文本,**逐字符一致**。
+**原 SRT 清洗后的句是一等公民。** JSON 的 `sentences` 必须与 SRT 清洗合并后的句**逐条一一对应、顺序不变**:第 i 句的 `start/end` 就是第 i 句的起止时间,`en` 就是该句的清洗后文本,**逐字符一致**。
 
-- **禁止合并、禁止拆分、禁止改写**:不许把相邻两 cue 并成一句,不许把长 cue 拆成多句,不许补标点/改大小写/顺语法——哪怕看起来更通顺。结构只能由 `srt_tool.py` 从 SRT 机械生成,人和 agent 都不动。
+- **卡拉OK式逐词高亮源由脚本机械合并**:这类源同一句每高亮一个单词就重复一条 cue(常再补一条整句长条),剥掉高亮标签后文本完全一致。`srt_tool.py` 按「相邻同文」把这样连排的 cue 机械合并为一句,时间取并集 `[首条.start, 末条.end]`。这是唯一允许的合并,由脚本在 draft/check 里自动完成,不经人手。
+- **除此之外禁止合并、禁止拆分、禁止改写**:不许把相邻两句并成一句,不许把长句拆成多句,不许补标点/改大小写/顺语法——哪怕看起来更通顺。除卡拉OK合并外,结构只能由 `srt_tool.py` 从 SRT 机械生成,人和 agent 都不动。
 - **不要关注句子长短**:20 词、30 词的长句照原样保留,半句话碎片也照原样保留。长度既不是拆分的理由,也不是合并的理由。
-- 反面教训:agent 自造拆分点 = 时间戳是编造的,前端高亮与跟读评分全部错位,整批返工。
-- 机器拦截:`check` 逐句比对 cue 的数量/时间戳/文本,任何漂移直接 ERROR,修不绿不交付。
+- 反面教训:agent 自造拆分点/合并点 = 时间戳是编造的,前端高亮与跟读评分全部错位,整批返工。
+- 机器拦截:`check` 逐句比对合并后句子的数量/时间戳/文本,任何漂移直接 ERROR,修不绿不交付。
 
 ## 架构取舍(为什么这样分层)
 
@@ -39,6 +40,7 @@ description: SRT 转 EnLearn 启蒙教学字幕 JSON(按原始 cue 逐条富化 
 ### 0. 前置确认
 
 - 月度文件夹形态:`NN_标题.mp4` + 素材同名文件夹 `NN_标题/`(内含 `NN_标题.srt`,序号=日期,见 AGENTS.md 导入约定)
+- **成品 JSON 落盘位置(导入契约,硬规则)**:必须是素材同名文件夹内的同名文件 `NN_标题/NN_标题.json`,与 mp4 同级——后端导入只查这个位置(`main.py` 导入端 `f.parent / f.stem / (f.stem + ".json")`),平铺在课程文件夹根的 `.json` 不会被读取。`draft` 自动落盘到该位置(srt 平铺时自动创建同名文件夹),`check` 按同一路径查找;源 srt 放哪都行,但成品 json 不要手工挪动
 - 已存在同名 `.json` 时先问用户是否重做(重做加 `--force`,会覆盖已富化内容)
 - 量大时(整月)一次会话做一支视频,做完一支 check 一支,不攒批——超长会话富化质量会漂移
 
@@ -48,8 +50,16 @@ description: SRT 转 EnLearn 启蒙教学字幕 JSON(按原始 cue 逐条富化 
 backend\.venv\Scripts\python.exe .agents\skills\srt-to-json\scripts\srt_tool.py draft <文件夹|单个.srt> [--force]
 ```
 
-脚本做:去 BOM/GBK 降级解码 → 逐 cue 清洗(HTML 标签、♪/`[music]` 注解行、说话人标签 `JOHN:`)→ **原样逐条成句(1 cue = 1 句:不组句、不补标点、不改大小写、时间戳原值)** → 写同名 `.json`(只含 `start/end/en`,至此全部冻结)。
+脚本做:去 BOM/GBK 降级解码 → 逐 cue 清洗(HTML 标签、♪/`[music]` 注解行、说话人标签 `JOHN:`)→ 源时间轴缺陷规范化(卡拉OK式高亮字幕常见,见 `_normalize`:首尾颠倒的 cue 交换起止;相邻 cue 重叠的把上一 cue 的 end 钳到本 cue start;仍零长的补 1ms)→ **卡拉OK相邻同文 cue 机械合并为一句(时间取并集,见 `_merge_karaoke`),除此之外不组句、不补标点、不改大小写** → 写入素材同名文件夹 `NN_标题/NN_标题.json`(只含 `start/end/en`,至此全部冻结)。
 
+- 卡拉OK实例:`resouse/09.The Big Green Forest/001` 源 96 条 cue,同一句 "Watch me hop!" 逐词高亮连排重复 5 条(剥掉 `<font>` 高亮标签后文本完全一致)→ 全片合并为 16 句。新 `draft` 自动合并,`check` 按合并后形态校验
+- 存量修复:旧规则(逐 cue 1:1)生成的成品 json,卡拉OK源同一句会连排约 5 条重复,用 `dedup` 就地修:
+  ```
+  python srt_tool.py dedup <文件夹 | 单个.srt>
+  ```
+  只按「相邻同文」合并,zh/note/words 富化内容一条不丢(后条回填首条缺失字段),合并后立即 check,全绿才算过;出现 ERROR 说明结构被动过,排查原因,不许手改 json 绕过
+
+- 脚本纯标准库,任何 Python 3.10+ 可跑;`backend\.venv` 可能损坏(基础解释器被删),届时换系统里的 Python(如 `D:\tools\py311\python.exe`)即可
 - 清洗规则集中在脚本 `_clean()`:要改就改脚本后重跑 `draft --force`(会覆盖富化内容,慎用),不手改 JSON
 - 实测:01-04 素材无 ♪/注解行误杀、无空 cue,清洗层零丢失
 
@@ -64,7 +74,7 @@ draft 生成的 `start/end/en` 即最终值,富化前后都不允许任何调整
 
 **先通读全片再动笔**:记下标题语境、角色名、口头禅的既有译名,全片(乃至同月系列)保持一致。
 
-对每句补 `zh` / `words` / `note`,启蒙质量标准(每句就是原始 cue 的粒度:碎片按碎片译、长句按长句译,不补全、不拆分):
+对每句补 `zh` / `words` / `note`,启蒙质量标准(每句就是清洗合并后句子的粒度:碎片按碎片译、长句按长句译,不补全、不拆分):
 
 | 字段 | 标准 |
 |---|---|

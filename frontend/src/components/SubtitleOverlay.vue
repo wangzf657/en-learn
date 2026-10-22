@@ -5,7 +5,7 @@ const props = defineProps({
   cues: { type: Array, default: () => [] },
   currentTime: { type: Number, default: 0 },
   enabled: { type: Boolean, default: true },
-  styleClass: { type: String, default: 'sub-cinema' },
+  styleClass: { type: String, default: 'sub-clean' },
   size: { type: String, default: 'sub-size-lg' },
 })
 
@@ -14,12 +14,18 @@ const currentCue = computed(() => {
   const t = props.currentTime || 0
   return props.cues.find((c) => t >= c.start && t < c.end) || null
 })
+
+// 卡拉OK srt:相邻 cue 是同一句子、仅 <font> 高亮词位置不同。
+// key 取去标签后的纯文本,高亮移动时 key 不变 → 同一 <p> 原位更新、不重播入场动画;
+// 只有换句时 key 才变,过渡才触发。
+const cueKey = computed(() => (currentCue.value?.text || '').replace(/<[^>]*>/g, ''))
 </script>
 
 <template>
   <div class="subtitle-overlay" :class="[styleClass, size, { 'sub-off': !enabled }]" aria-live="polite">
     <Transition name="cue" mode="out-in">
-      <p v-if="currentCue" :key="currentCue.text" class="subtitle-cue">{{ currentCue.text }}</p>
+      <!-- v-html:srt 原样渲染,卡拉OK <font color> 高亮由浏览器直接生效(本地字幕文件,非外部输入) -->
+      <p v-if="currentCue" :key="cueKey" class="subtitle-cue" v-html="currentCue.text"></p>
     </Transition>
   </div>
 </template>

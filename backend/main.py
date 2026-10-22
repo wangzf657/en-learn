@@ -239,7 +239,8 @@ def get_day(date: str):
     materials = []
     for r in sorted(rows, key=material_key):
         p = Path(root) / r["rel_path"]
-        has_srt = bool(root) and (p.parent / p.stem / (p.stem + ".srt")).is_file()
+        # 浮层字幕源:视频同目录同名 .srt(与导入用的同名文件夹 JSON 互不相干)
+        has_srt = bool(root) and p.with_suffix(".srt").is_file()
         materials.append(
             {
                 "id": r["id"],
@@ -300,7 +301,7 @@ def srt(mid: int):
     if not r:
         raise HTTPException(404, "素材不存在")
     p = Path(root) / r["rel_path"]
-    path = p.parent / p.stem / (p.stem + ".srt")
+    path = p.with_suffix(".srt")
     if not path.is_file():
         raise HTTPException(404, "字幕文件不存在")
     return PlainTextResponse(
@@ -863,6 +864,8 @@ def spa(full_path: str):
 
 if __name__ == "__main__":
     init_db()
+    # ENLEARN_PORT 供冒烟测试用独立端口启动,避免与常驻生产实例(8420)相撞
+    port = int(os.environ.get("ENLEARN_PORT", "8420"))
     if os.environ.get("ENLEARN_NO_BROWSER") != "1":
-        threading.Timer(1.5, lambda: webbrowser.open("http://127.0.0.1:8420")).start()
-    uvicorn.run(app, host="127.0.0.1", port=8420)
+        threading.Timer(1.5, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
+    uvicorn.run(app, host="127.0.0.1", port=port)

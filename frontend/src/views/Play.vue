@@ -21,7 +21,7 @@ const toast = ref('')
 const celebrate = ref(false)
 
 const srtCues = ref([])
-const subtitleStyle = ref('sub-off')
+const subtitleStyle = ref('sub-clean')
 
 const videoEl = ref(null)
 const progressEl = ref(null)
@@ -39,13 +39,9 @@ const videoSrc = computed(() => currentMaterial.value?.videoUrl || '')
 const srtUrl = computed(() => currentMaterial.value?.srtUrl || null)
 const pageTitle = computed(() => currentMaterial.value?.title || props.date)
 
-// 浮层字幕优先同步派生自内存中的 sentences(已带 start/end/en),切换素材立即有数据不闪空;
-// 仅当 sentences 为空才用 srt 文本兜底。
-const cues = computed(() =>
-  sentences.value.length
-    ? sentences.value.map((s) => ({ start: s.start, end: s.end, text: s.en || '' }))
-    : srtCues.value,
-)
+// 浮层字幕只用视频同目录同名 .srt(原样渲染,卡拉OK高亮直接生效);
+// 右侧台词面板与跟读走内嵌 JSON(sentences),两者互不相干。
+const cues = computed(() => srtCues.value)
 
 const subtitleOpen = ref(true)
 const isFullscreen = ref(false)
@@ -141,12 +137,13 @@ async function load() {
 
 let srtReqId = 0
 
-// sentences 为空时才拉 srt;序号校验丢弃切换素材后迟到的响应
+// 拉浮层 srt;无 srtUrl(视频同目录无同名 .srt)或 404 = 无浮层字幕。
+// 序号校验丢弃切换素材后迟到的响应。
 async function loadCuesFallback() {
   const reqId = ++srtReqId
   srtCues.value = []
   const url = srtUrl.value
-  if (!url || sentences.value.length) return
+  if (!url) return
   try {
     const res = await fetch(url)
     if (reqId !== srtReqId) return
