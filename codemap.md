@@ -19,7 +19,7 @@ A single-machine, self-hosted English-learning application (no login, no cloud):
 
 1. **Admin** sets library root → imports a course folder (direct-child `*.mp4` + sibling JSON subtitle) → backend upserts by `rel_path` natural key.
 2. **Admin** schedules a course over a date range → backend evenly distributes materials across days (`day_materials`).
-3. **Learner** opens a day (`/play/:date`) → video streams via HTTP Range (206), the bottom overlay renders the video's sibling same-name `.srt` verbatim (karaoke `<font>` highlight via v-html), while the side panel and repeat modal use the embedded teaching JSON.
+3. **Learner** opens a day (`/play/:date`) → video streams via HTTP Range (206), the bottom overlay renders the video's sibling same-name `.srt` verbatim (karaoke `<font>` highlight via v-html), while the side practice panel and repeat modal consume the embedded teaching JSON (V2.0 distilled four boards: key words / key sentences / parent-child dialogues / parent guide).
 4. **Repeat modal** records browser-encoded 16 kHz/16-bit/mono WAV → `POST /api/score` → `echoic` facade → registered provider (`mock`/`unisound`) → 0–100 normalized scores.
 5. **Check-in** marks the day and stamps its still-unread materials; read items then surface their image/PDF sibling files in the review center.
 
@@ -32,7 +32,7 @@ A single-machine, self-hosted English-learning application (no login, no cloud):
 | `backend/echoic/providers/` | Pluggable scoring backends: `ScoringProvider` ABC + name registry, `mock` fake and `unisound` cloud API (multipart order, ×10 normalization, auth headers). | [View Map](backend/echoic/providers/codemap.md) |
 | `frontend/` | SPA engineering layer: Vite/vitest configs, in-memory mock API Vite plugin, offline smoke script, HTML entry. | [View Map](frontend/codemap.md) |
 | `frontend/src/` | App skeleton: router bootstrap, persistent app bar + TTS warmup, the sole fetch client `api.js`, global design-system CSS. | [View Map](frontend/src/codemap.md) |
-| `frontend/src/components/` | Four player components: RepeatModal (record/score state machine), SubtitleOverlay, SubtitlePanel, SubtitleStylePicker. | [View Map](frontend/src/components/codemap.md) |
+| `frontend/src/components/` | Four player components: RepeatModal (record/score state machine), SubtitleOverlay, PracticePanel (V2.0 dual-tab practice/guide panel), SubtitleStylePicker. | [View Map](frontend/src/components/codemap.md) |
 | `frontend/src/views/` | Five route pages: Home calendar, fixed-screen Play, free LocalPlay, Review center, three-tab Admin console. | [View Map](frontend/src/views/codemap.md) |
 | `frontend/src/utils/` | Dependency-free utilities: Monday-first calendar math, raw-PCM WAV recorder, SRT parser, speechSynthesis wrapper. | [View Map](frontend/src/utils/codemap.md) |
 
@@ -42,7 +42,7 @@ A single-machine, self-hosted English-learning application (no login, no cloud):
 - `AGENTS.md` — AI agent repo guide (architecture notes, gotchas, verification commands).
 - `build.bat` — release build entry point.
 - `opencode.json` — OpenCode tooling configuration.
-- `docs/design.md` — V1.0 source-of-truth design/API contract; `docs/v1.1.0.md` — unimplemented iteration notes (excluded from code mapping).
+- `docs/v1.0.0.md` — V1.0 source-of-truth design/API contract; `docs/v1.1.0.md` — V1.1 review-center record; `docs/v2.0.md` — V2.0 distilled practice-card contract (current).
 - `.agents/skills/srt-to-json/` — local skill for producing enriched teaching subtitle JSON (tooling, not application code; excluded from mapping).
 
 ## Verification

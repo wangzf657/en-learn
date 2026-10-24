@@ -6,29 +6,34 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const emptyMp4Path = path.join(__dirname, 'public', 'mock', 'empty.mp4')
 
+// V2.0 提炼式练习卡样例(四板:重点单词/重点短句/亲子对话/家长带学)
 const sampleSubtitle = {
+  words: [
+    { w: "doing", zh: "做；进行", note: "How you doing 是美式口语常用问候" },
+    { w: "great", zh: "很棒", note: "表示很棒、很好" },
+    { w: "get started", zh: "开始", note: "开始做某事的固定说法" },
+  ],
   sentences: [
+    { start: 1.2, end: 4.5, en: "How you doing?", zh: "你好吗？", note: "How…? 问近况的句型" },
+    { start: 5.0, end: 8.0, en: "I'm doing great, thanks.", zh: "我很好，谢谢。" },
+  ],
+  dialogues: [
     {
-      start: 1.2,
-      end: 4.5,
-      en: "How you doing?",
-      zh: "你好吗？",
-      words: [{ w: "doing", phonetic: "ˈduːɪŋ", note: "How you doing 是美式口语常用问候" }],
-    },
-    {
-      start: 5.0,
-      end: 8.0,
-      en: "I'm doing great, thanks.",
-      zh: "我很好，谢谢。",
-      words: [{ w: "great", phonetic: "ɡreɪt", note: "表示很棒、很好" }],
-    },
-    {
-      start: 8.5,
-      end: 12.0,
-      en: "Let's get started.",
-      zh: "我们开始吧。",
+      scene: "放学见面",
+      lines: [
+        { speaker: "parent", en: "How you doing?", zh: "你好吗？" },
+        { speaker: "child", en: "I'm doing great, thanks!", zh: "我很好，谢谢！" },
+      ],
+      tip: "放学接到孩子时互相问候一遍",
     },
   ],
+  guide: {
+    goal: "听懂 How you doing，会说 I'm doing great",
+    before: ["跟孩子说：今天学怎么用英语打招呼"],
+    during: ["视频里出现 How you doing 就一起挥挥手"],
+    after: ["How you doing 是什么意思？", "怎么回答「我很好」？"],
+    tips: ["doing 连读 /ˈduːɪŋ/，别拆成 do-ing"],
+  },
 }
 
 const sampleSrt = `1

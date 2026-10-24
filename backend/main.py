@@ -170,20 +170,64 @@ def valid_date(s: str) -> bool:
 
 
 def normalize_subtitle(raw) -> str:
-    """校验并规范化字幕 JSON，非法时抛 422。返回规范化后的 JSON 字符串。"""
+    """校验并规范化教学 JSON，非法时抛 422。返回规范化后的 JSON 字符串。
+
+    V2.0 提炼式契约（权威：.agents/skills/srt-to-json/subtitle.schema.json）：
+    words/sentences/dialogues/guide 四板可选、非空板块至少一板。这里只做浅校验
+    （逐字对齐/词块子序列等深度契约由 srt_tool check 把关）；其余字段原样透传。
+    旧格式（顶层全量 sentences 数组）天然兼容——sentences 本身是合法板块。
+    """
     try:
         data = json.loads(raw) if isinstance(raw, str) else raw
     except (json.JSONDecodeError, TypeError):
         raise HTTPException(422, "subtitleJson 不是合法 JSON")
-    if not isinstance(data, dict) or not isinstance(data.get("sentences"), list):
-        raise HTTPException(422, "subtitleJson 必须是包含 sentences 数组的对象")
-    for s in data["sentences"]:
-        if not isinstance(s, dict):
-            raise HTTPException(422, "sentences 元素必须是对象")
-        if not isinstance(s.get("start"), (int, float)) or not isinstance(
-            s.get("end"), (int, float)
-        ) or not isinstance(s.get("en"), str):
-            raise HTTPException(422, "每句必须包含 start/end(数字) 和 en(字符串)")
+    if not isinstance(data, dict):
+        raise HTTPException(422, "subtitleJson 必须是对象")
+
+    def nonempty(v):
+        return isinstance(v, str) and v.strip()
+
+    boards = 0
+    words = data.get("words")
+    if words is not None:
+        if not isinstance(words, list):
+            raise HTTPException(422, "words 必须是数组")
+        for w in words:
+            if not isinstance(w, dict) or not nonempty(w.get("w")):
+                raise HTTPException(422, "words 元素必须包含非空 w(字符串)")
+        boards += 1 if words else 0
+    sents = data.get("sentences")
+    if sents is not None:
+        if not isinstance(sents, list):
+            raise HTTPException(422, "sentences 必须是数组")
+        for s in sents:
+            if not isinstance(s, dict) or not nonempty(s.get("en")):
+                raise HTTPException(422, "sentences 元素必须包含非空 en(字符串)")
+        boards += 1 if sents else 0
+    dialogues = data.get("dialogues")
+    if dialogues is not None:
+        if not isinstance(dialogues, list):
+            raise HTTPException(422, "dialogues 必须是数组")
+        for d in dialogues:
+            if not isinstance(d, dict) or not isinstance(d.get("lines"), list):
+                raise HTTPException(422, "dialogues 元素必须包含 lines 数组")
+            for ln in d["lines"]:
+                if (
+                    not isinstance(ln, dict)
+                    or not nonempty(ln.get("en"))
+                    or ln.get("speaker") not in ("parent", "child")
+                ):
+                    raise HTTPException(
+                        422, "dialogues 行必须包含非空 en(字符串) 和 speaker(parent/child)"
+                    )
+        boards += 1 if dialogues else 0
+    guide = data.get("guide")
+    if guide is not None:
+        if not isinstance(guide, dict) or not nonempty(guide.get("goal")):
+            raise HTTPException(422, "guide 必须是包含非空 goal(字符串) 的对象")
+        boards += 1 if guide else 0
+    if boards == 0:
+        raise HTTPException(422, "subtitleJson 四板(words/sentences/dialogues/guide)至少一板非空")
     return json.dumps(data, ensure_ascii=False)
 
 

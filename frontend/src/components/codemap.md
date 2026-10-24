@@ -4,7 +4,7 @@
 
 ## Responsibility
 
-Four reusable presentation components shared by the player views: the repeat-aloud scoring modal, the video subtitle overlay, the sentence-list panel, and the subtitle style/size picker.
+Four reusable presentation components shared by the player views: the repeat-aloud scoring modal, the video subtitle overlay, the V2.0 dual-tab practice panel, and the subtitle style picker.
 
 ## Design
 
@@ -22,22 +22,24 @@ All are `<script setup>` SFCs communicating via props + `defineEmits`; none call
   - `currentCue` = first cue where `start <= t < end`; renders one `<p class="subtitle-cue">` keyed by text inside `<Transition name="cue" mode="out-in">`.
   - Entry-only animation — leave transition deliberately omitted so the `max-content` container never collapses mid-gap (documented in-source warning).
   - Styles are intentionally **global** (non-scoped): parent-supplied `styleClass` (`sub-clean` white / `sub-cinema` yellow display font / `sub-opaque` dark pill / `sub-off` hidden) and `size` (`sub-size-md/lg/xl` driving `--cue-size`/`--cue-size-cinema` variables, ≤640px fallbacks) must cross the scoped boundary. `aria-live="polite"`.
-- **`SubtitlePanel.vue`** — props `{ title, sentences, currentIndex, emptyText, cardAction='seek' }`; emits `seek` (inline timestamp button, always) and the value of `cardAction` (`'seek'` | `'repeat'`) from the card body click.
-  - Card shows `s.en`, optional `s.zh`, seek button labeled `m:ss` (local `formatTime`).
-  - `watch(currentIndex)` + `nextTick` auto-scrolls `.sentence-card.active` into view (smooth, centered).
-  - Named slot `actions` (`{ s, i }`) lets parents append per-sentence controls.
+- **`PracticePanel.vue`** — V2.0 带学练习面板. Props `{ practice }` (the material's teaching-JSON object); emits `seek` (sentence timestamp button) and `repeat` (word chip / sentence card / child dialogue line).
+  - Two internal tabs: 跟读练习 (key-word chips, key-sentence cards, parent-child dialogue cards) and 家长带学 (goal card + before/during/after/tips groups, read-only).
+  - Sentence cards reuse the old `.sentence-card` look: card click = `emit('repeat', s)` (whole-sentence repeat), inline `.seek-btn` = `emit('seek', s)`.
+  - Dialogue lines click-to-speak via `tts.js#speak` (jsdom-safe no-op); `speakingKey` highlights the line being read; only `speaker === 'child'` lines get a 跟读 mini-button.
+  - Word chip payloads synthesize `{ en: w.w, zh, words: [{w, note}]? }` — RepeatModal accepts any such object.
+  - Empty states: no boards → "本集暂无练习内容"; legacy full-script data (sentences only) still renders in the sentences block, guide tab shows its empty state.
 - **`SubtitleStylePicker.vue`** — two `<select>`s (style 清晰/影院/黑底/关闭; size 标准/大/特大) implementing `v-model` + `v-model:size` via `update:modelValue`/`update:size`.
   - Persists to localStorage keys `enlearn.subtitleStyle` / `enlearn.subtitleSize`; `loadPref`/`savePref` try/catch guards (invalid values fall back to prop defaults); `onMounted` restores saved values, emitting only when different.
 
 ## Flow
 
 1. Play/LocalPlay pass srt-derived cues + `currentTime` to SubtitleOverlay each tick → it recomputes the active cue.
-2. SubtitlePanel card click → `emit('repeat', s)` → view's `openRepeat(s)` sets `{ repeatSentence, repeatOpen }` → RepeatModal opens, resets, speaks/fills from `sentence`.
+2. PracticePanel interactions → `emit('repeat', payload)` → view's `openRepeat(s)` sets `{ repeatSentence, repeatOpen }` (pausing the video) → RepeatModal opens, resets, speaks/fills from `sentence`; `emit('seek', s)` → view seeks `video.currentTime = s.start` and plays.
 3. Space in RepeatModal → `toggleRecording()` → `startRecording()` → stop → `scoringApi.score(blob, reference)` POST `/api/score` → result rendered.
 4. Picker `@change` → emit + localStorage write → view ref updates `:style-class`/`:size` props on the overlay.
 
 ## Integration
 
-- Consumed by `Play.vue` (all four) and `LocalPlay.vue` (overlay + panel + picker, no RepeatModal).
-- RepeatModal depends on `utils/recorder.js`, `utils/tts.js`, `api.js#scoringApi`.
-- SubtitleOverlay/Panel depend only on Vue; the `sub-*` class keys and localStorage keys are a shared contract with both views and SubtitleStylePicker.
+- Consumed by `Play.vue` (all four) and `LocalPlay.vue` (all four — it gained RepeatModal in V2.0).
+- RepeatModal depends on `utils/recorder.js`, `utils/tts.js`, `api.js#scoringApi`; PracticePanel depends on `utils/tts.js#speak`.
+- SubtitleOverlay/PracticePanel otherwise depend only on Vue; the `sub-*` class keys and localStorage keys are a shared contract with both views and SubtitleStylePicker.

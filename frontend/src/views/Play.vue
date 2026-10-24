@@ -5,7 +5,7 @@ import { dayApi } from '../api.js'
 import { parseSrt } from '../utils/srt.js'
 import SubtitleOverlay from '../components/SubtitleOverlay.vue'
 import SubtitleStylePicker from '../components/SubtitleStylePicker.vue'
-import SubtitlePanel from '../components/SubtitlePanel.vue'
+import PracticePanel from '../components/PracticePanel.vue'
 import RepeatModal from '../components/RepeatModal.vue'
 
 const props = defineProps({ date: String })
@@ -34,13 +34,13 @@ const playbackRate = ref(1)
 const rates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
 const currentMaterial = computed(() => day.value?.materials?.[currentMaterialIndex.value] || null)
-const sentences = computed(() => currentMaterial.value?.subtitle?.sentences || [])
+const practice = computed(() => currentMaterial.value?.subtitle || {})
 const videoSrc = computed(() => currentMaterial.value?.videoUrl || '')
 const srtUrl = computed(() => currentMaterial.value?.srtUrl || null)
 const pageTitle = computed(() => currentMaterial.value?.title || props.date)
 
 // 浮层字幕只用视频同目录同名 .srt(原样渲染,卡拉OK高亮直接生效);
-// 右侧台词面板与跟读走内嵌 JSON(sentences),两者互不相干。
+// 右侧练习面板与跟读走内嵌教学 JSON(V2.0 四板),两者互不相干。
 const cues = computed(() => srtCues.value)
 
 const subtitleOpen = ref(true)
@@ -89,20 +89,9 @@ async function toggleFullscreen() {
 
 function onFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement
-  // 进入全屏时默认收起台词栏(仍可经回车/收起按钮自行展开)
+  // 进入全屏时默认收起练习面板(仍可经回车/收起按钮自行展开)
   if (document.fullscreenElement) subtitleOpen.value = false
 }
-
-const currentIndex = computed(() => {
-  const list = sentences.value
-  if (!list.length) return -1
-  const t = currentTime.value
-  for (let i = 0; i < list.length; i++) {
-    if (t >= list[i].start && t < list[i].end) return i
-  }
-  if (t >= list[list.length - 1].end) return list.length - 1
-  return -1
-})
 
 const progressPercent = computed(() => {
   if (!duration.value) return 0
@@ -169,7 +158,7 @@ function isEditableTarget(el) {
   return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el.isContentEditable
 }
 
-// 全局快捷键:空格=播放/暂停,F11=全屏,回车=收起/展开单词栏
+// 全局快捷键:空格=播放/暂停,F11=全屏,回车=收起/展开练习面板
 // 弹窗打开或焦点在输入控件(输入框/下拉/可编辑)时除外;普通按钮聚焦时也走全局,
 // 并用 preventDefault 阻止按钮自身的默认激活,避免“点了一次全屏后空格/回车都变成全屏”。
 function onKeyDown(e) {
@@ -372,7 +361,7 @@ onBeforeUnmount(() => {
             <button
               class="icon-btn drawer-toggle"
               type="button"
-              :title="subtitleOpen ? '收起台词' : '展开台词'"
+              :title="subtitleOpen ? '收起练习面板' : '展开练习面板'"
               @click="toggleSubtitle"
             >
               <svg v-if="subtitleOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -433,6 +422,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
+          <!-- 分集紧凑数字 chips:选中集的完整名称显示在上方标题,悬停可看全集名 -->
           <div v-if="day?.materials?.length > 1" class="video-chips" role="tablist" aria-label="素材切换">
             <button
               v-for="(m, i) in day.materials"
@@ -442,20 +432,17 @@ onBeforeUnmount(() => {
               :class="{ active: i === currentMaterialIndex }"
               role="tab"
               :aria-selected="i === currentMaterialIndex"
+              :title="m.title || `素材 ${i + 1}`"
               @click="currentMaterialIndex = i"
             >
-              {{ m.title || `素材 ${i + 1}` }}
+              {{ i + 1 }}
             </button>
           </div>
         </div>
 
-        <SubtitlePanel
+        <PracticePanel
           class="panel-fill"
-          title="今日台词"
-          card-action="repeat"
-          :sentences="sentences"
-          :current-index="currentIndex"
-          empty-text="暂无字幕数据"
+          :practice="practice"
           @seek="seekToSentence"
           @repeat="openRepeat"
         />

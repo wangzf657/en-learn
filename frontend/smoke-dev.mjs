@@ -29,7 +29,11 @@ await check('calendar', `${base}/api/calendar?month=2026-09`, (status, body) => 
 })
 
 await check('day', `${base}/api/day/2026-09-14`, (status, body) => {
-  return status === 200 && body.materials?.length === 1 && body.materials[0].subtitle?.sentences?.length === 3 && body.materials[0].title === '日常问候'
+  const sub = body.materials?.[0]?.subtitle
+  return status === 200 && body.materials?.length === 1 &&
+    sub?.sentences?.length === 2 && sub?.words?.length === 3 &&
+    sub?.dialogues?.length === 1 && !!sub?.guide?.goal &&
+    body.materials[0].title === '日常问候'
 })
 
 await check('srt', `${base}/api/materials/1/srt`, (status, body) => {

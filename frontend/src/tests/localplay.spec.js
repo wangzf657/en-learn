@@ -93,6 +93,29 @@ describe('LocalPlay.vue course playback', () => {
     expect(sentences[0].find('.en').text()).toBe('Hello')
   })
 
+  it('sentence card click opens the repeat modal, seek goes through the timestamp button', async () => {
+    const { wrapper } = await mountWithRouter(LocalPlay, {}, '/local')
+
+    await wrapper.find('.course-header').trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+    await wrapper.find('.material-item').trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    // 点短句卡 = 打开跟读弹窗(自由播放页也接入了跟读)
+    await wrapper.find('.sentence-card').trigger('click')
+    expect(wrapper.find('.repeat-modal').exists()).toBe(true)
+    await wrapper.find('.repeat-modal .icon-btn').trigger('click')
+    expect(wrapper.find('.repeat-modal').exists()).toBe(false)
+
+    // 跳转走时间戳按钮
+    const video = wrapper.find('video').element
+    let played = false
+    video.play = () => { played = true; return Promise.resolve() }
+    await wrapper.find('.sentence-card .seek-btn').trigger('click')
+    expect(video.currentTime).toBe(1)
+    expect(played).toBe(true)
+  })
+
   it('shows an empty state when course library is empty', async () => {
     mockFetch(() => ({ status: 200, body: { courses: [] } }))
     const { wrapper } = await mountWithRouter(LocalPlay, {}, '/local')
@@ -136,7 +159,7 @@ describe('LocalPlay.vue course playback', () => {
     video.play = () => { played = true; return Promise.resolve() }
     video.pause = pauseSpy
 
-    await wrapper.find('.sentence-card').trigger('click')
+    await wrapper.find('.sentence-card .seek-btn').trigger('click')
     expect(video.currentTime).toBe(1)
     expect(played).toBe(true)
 

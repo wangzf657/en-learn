@@ -16,16 +16,16 @@ All `<script setup>` Composition API; each owns its fetch lifecycle, local UI st
   - Cell states `has-video`/`checked`/`is-today`; clicking a day with `materialId` routes to `/play/:date`; empty month links to `/admin`.
 - **`Play.vue`** (`/play/:date`, `props: true`) — fixed one-screen player.
   - `onMounted` sets `document.documentElement/body.style.overflow = 'hidden'` (restored on unmount); height `calc(100svh - var(--appbar-h))`.
-  - Loads `dayApi.get(date)`; `currentMaterialIndex` switches day materials (chips, role=tablist); sentences come from `material.subtitle.sentences`.
-  - `loadCuesFallback()` always fetches `srtUrl` + `parseSrt` (null `srtUrl` = no overlay subtitles); monotonic `srtReqId` discards stale responses. `cues` are srt-only — the panel/repeat sentences come from embedded JSON, two independent tracks.
-  - Custom controls (play, volume, draggable progress, rate select, fullscreen on `layoutRef`) mirror `<video>` events into refs; `currentIndex` maps time→sentence for panel highlighting.
-  - **Global shortcuts** (window keydown; skipped when RepeatModal is open or target is editable; `preventDefault` also for focused buttons): `Space` = play/pause, `Enter` = collapse/expand the sentence drawer (`subtitleOpen`; auto-collapsed on entering fullscreen), `F11` = toggleFullscreen (Fullscreen API + `fullscreenchange` listener).
+  - Loads `dayApi.get(date)`; `currentMaterialIndex` switches day materials via compact number chips (`1 2 3…`, full title in the header + chip `title` tooltip); `practice` = `material.subtitle` (V2.0 four boards).
+  - `loadCuesFallback()` always fetches `srtUrl` + `parseSrt` (null `srtUrl` = no overlay subtitles); monotonic `srtReqId` discards stale responses. `cues` are srt-only — the practice panel/repeat consume embedded JSON, two independent tracks.
+  - Custom controls (play, volume, draggable progress, rate select, fullscreen on `layoutRef`) mirror `<video>` events into refs.
+  - **Global shortcuts** (window keydown; skipped when RepeatModal is open or target is editable; `preventDefault` also for focused buttons): `Space` = play/pause, `Enter` = collapse/expand the practice drawer (`subtitleOpen`; auto-collapsed on entering fullscreen), `F11` = toggleFullscreen (Fullscreen API + `fullscreenchange` listener).
   - Checkin button → `dayApi.checkin(date)` → toast + confetti.
-  - Composes all four components: SubtitleOverlay/StylePicker in the video section, SubtitlePanel (`card-action="repeat"`) + RepeatModal in the drawer.
+  - Composes all four components: SubtitleOverlay/StylePicker in the video section, PracticePanel + RepeatModal in the drawer.
 - **`LocalPlay.vue`** (`/local`) — free playback.
   - `adminApi.listCourses()` → accordion sidebar; expanding a course lazily `adminApi.getCourse(id)` into a `courseMaterials` cache.
-  - `playMaterial(material)` sets `video.src = /api/materials/:id/stream`, resets time, and always fetches `/api/materials/:id/srt` + `parseSrt` for the overlay (same stale-response guard); the panel still uses `material.subtitle.sentences`.
-  - Reuses SubtitleOverlay/StylePicker/SubtitlePanel (`card-action="seek"` — card click seeks to the sentence) but has **no RepeatModal and no keyboard shortcuts**; fullscreen targets the stage element.
+  - `playMaterial(material)` sets `video.src = /api/materials/:id/stream`, resets time, and always fetches `/api/materials/:id/srt` + `parseSrt` for the overlay (same stale-response guard); the practice panel uses `material.subtitle` (four boards).
+  - Reuses SubtitleOverlay/StylePicker/PracticePanel **plus RepeatModal (V2.0: repeat is available everywhere)**, but has no keyboard shortcuts; fullscreen targets the stage element.
 - **`Review.vue`** (`/review`)
   - `reviewApi.get()` once on mount → `groups` (course-level `kind:'course'` + per-material groups; `files[]` with `{name, url, kind: 'image'|'pdf'}`).
   - Three-level in-page navigation (no sub-routes): `selectedCourseId` → `selectedGroupKey` → lightbox; `courseSections` computed groups by `courseId`.
@@ -38,7 +38,7 @@ All `<script setup>` Composition API; each owns its fetch lifecycle, local UI st
 ## Flow
 
 1. Home: month change → `calendarApi.getMonth` → `days[]` → dayMap → cell click → `router.push('/play/2026-09-14')`.
-2. Play: `dayApi.get(date)` → materials + subtitles → `<video>` streams `/api/materials/:id/stream` → `timeupdate` drives `currentTime` → overlay cue + panel highlight → card click `repeat` → RepeatModal → `scoringApi.score` → `/api/score`.
+2. Play: `dayApi.get(date)` → materials + subtitles → `<video>` streams `/api/materials/:id/stream` → `timeupdate` drives `currentTime` → overlay cue; practice-panel card/chip/line click `repeat` → RepeatModal → `scoringApi.score` → `/api/score`.
 3. Play: checkin button → `dayApi.checkin(date)` → backend marks the day checked and its materials read.
 4. Admin: import/schedule/ day CRUD → refresh via `loadCourses` + `loadScheduleDays`; schedule POST makes the backend distribute materials evenly across dates.
 
@@ -46,4 +46,4 @@ All `<script setup>` Composition API; each owns its fetch lifecycle, local UI st
 
 - Registered in `main.js`'s route table; `Play` receives `:date` as a prop.
 - All consume `api.js`; Play/LocalPlay additionally use `utils/srt.js`, Admin uses `utils/tts.js`, Home uses `utils/date.js`.
-- Component usage: Play → Overlay+Picker+Panel+RepeatModal; LocalPlay → Overlay+Picker+Panel; Review/Admin use none.
+- Component usage: Play → Overlay+Picker+PracticePanel+RepeatModal; LocalPlay → all four as well; Review/Admin use none.

@@ -124,7 +124,7 @@ def main():
     library_backup = LIBRARY.read_bytes() if LIBRARY.exists() else None
     LIBRARY.unlink(missing_ok=True)
 
-    # 主课程文件夹:5 有效素材(3.gamma 坏字幕),另有子文件夹与非 mp4
+    # 主课程文件夹:5 有效素材(3.gamma 空壳字幕被跳过),另有子文件夹与非 mp4
     SRC.mkdir()
     (SRC / "1.alpha.mp4").write_bytes(os.urandom(1024 * 1024))
     # 浮层 srt = 视频同目录同名 .srt(教学 JSON 才放素材同名文件夹)
@@ -132,12 +132,27 @@ def main():
         "\ufeff1\r\n00:00:00,000 --> 00:00:01,000\r\nHello\r\n".encode("utf-8"))
     (SRC / "2.beta.mp4").write_bytes(b"")
     (SRC / "2.beta").mkdir()
-    (SRC / "2.beta" / "2.beta.json").write_text(
-        json.dumps({"sentences": [{"start": 0.0, "end": 1.0, "en": "Hi."}]}), encoding="utf-8")
+    # V2.0 提炼式四板样例(重点单词 + 重点短句 + 亲子对话 + 带学脚本)
+    (SRC / "2.beta" / "2.beta.json").write_text(json.dumps({
+        "words": [{"w": "Hi", "zh": "嗨", "note": "见面打招呼"}],
+        "sentences": [{"start": 0.0, "end": 1.0, "en": "Hi.", "zh": "嗨。"}],
+        "dialogues": [{"scene": "见面打招呼", "lines": [
+            {"speaker": "parent", "en": "Hi!", "zh": "嗨！"},
+            {"speaker": "child", "en": "Hi, Mom!", "zh": "嗨，妈妈！"},
+        ]}],
+        "guide": {"goal": "会说 Hi 打招呼", "before": ["跟孩子说:今天学打招呼"],
+                  "after": ["Hi 是什么意思?"]},
+    }), encoding="utf-8")
     (SRC / "3.gamma.mp4").write_bytes(b"")
     (SRC / "3.gamma").mkdir()
-    (SRC / "3.gamma" / "3.gamma.json").write_text("{bad json", encoding="utf-8")
+    # 空壳四板:导入必须按"字幕 JSON 无效"跳过(契约要求至少一板非空)
+    (SRC / "3.gamma" / "3.gamma.json").write_text(
+        json.dumps({"words": [], "sentences": [], "dialogues": [], "guide": {}}), encoding="utf-8")
     (SRC / "4.delta.mp4").write_bytes(b"")
+    # 旧格式(顶层全量 sentences,无 zh)兼容放行
+    (SRC / "4.delta").mkdir()
+    (SRC / "4.delta" / "4.delta.json").write_text(
+        json.dumps({"sentences": [{"start": 0.0, "end": 1.0, "en": "Old."}]}), encoding="utf-8")
     (SRC / "5.epsilon.mp4").write_bytes(b"")
     (SRC / "10.omega.mp4").write_bytes(b"")
     (SRC / "notes.txt").write_text("x", encoding="utf-8")
@@ -219,7 +234,8 @@ def main():
         d = json.loads(b)
         by_title = {m["title"]: m for m in d["materials"]}
         check("课程详情 字幕入库", s == 200 and by_title["beta"]["sentenceCount"] == 1
-              and by_title["alpha"]["sentenceCount"] == 0, b[:200])
+              and by_title["alpha"]["sentenceCount"] == 0
+              and by_title["delta"]["sentenceCount"] == 1, b[:200])
         check("课程详情 read/readAt/dates 初始", by_title["alpha"]["read"] is False
               and by_title["alpha"]["readAt"] is None and by_title["alpha"]["dates"] == [], b[:200])
 
@@ -341,9 +357,13 @@ def main():
         check("day 形状/素材排序/字段名", s == 200 and d["date"] == "2026-09-01" and d["checked"] is False
               and [m["id"] for m in mats] == [m_alpha, m_beta]
               and all(m["videoUrl"] == f"/api/materials/{m['id']}/stream" for m in mats), b[:250])
+        sub_beta = mats[1]["subtitle"]
         check("day srtUrl 有无/字幕", mats[0]["srtUrl"] == f"/api/materials/{m_alpha}/srt"
-              and mats[1]["srtUrl"] is None and mats[1]["subtitle"]["sentences"][0]["en"] == "Hi."
+              and mats[1]["srtUrl"] is None and sub_beta["sentences"][0]["en"] == "Hi."
               and mats[0]["subtitle"]["sentences"] == [], b[:250])
+        check("day 四板透传", sub_beta["words"][0]["w"] == "Hi"
+              and sub_beta["dialogues"][0]["lines"][0]["speaker"] == "parent"
+              and sub_beta["guide"]["goal"] == "会说 Hi 打招呼", b[:250])
         s, b, _ = req("GET", "/api/day/2026-12-25")
         check("day 无任务 404", s == 404 and detail(b) == "当天没有学习任务", b[:80])
         s, b, _ = req("POST", "/api/day/2026-12-25/checkin")

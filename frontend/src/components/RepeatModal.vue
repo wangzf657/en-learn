@@ -24,8 +24,13 @@ let alive = true
 const defaultText = computed(() => props.sentence?.en || '')
 const reference = computed(() => customText.value.trim() || defaultText.value)
 
-// 把整句按常用标点切成独立断句(保留标点),用于逐句朗读 + 选中快速填入
+// 断句块:外部显式传入(如亲子对话逐行,一行一块整句跟读)优先;
+// 未传时按常用标点切成独立断句(保留标点),用于逐句朗读 + 选中快速填入
 const segments = computed(() => {
+  const explicit = props.sentence?.segments
+  if (Array.isArray(explicit)) {
+    return explicit.map((s) => String(s).trim()).filter(Boolean)
+  }
   const text = (defaultText.value || '').trim()
   if (!text) return []
   return text

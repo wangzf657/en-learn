@@ -9,12 +9,31 @@ vi.mock('../utils/recorder.js', () => ({
 import Play from '../views/Play.vue'
 import { startRecording } from '../utils/recorder.js'
 
+// V2.0 提炼式练习卡(四板)
 const sampleSubtitle = {
-  sentences: [
-    { start: 1.2, end: 4.5, en: 'How you doing?', zh: '你好吗？', words: [{ w: 'doing', phonetic: 'ˈduːɪŋ', note: '美式问候' }] },
-    { start: 5.0, end: 8.0, en: "I'm doing great.", zh: '我很好。' },
-    { start: 8.5, end: 12.0, en: "Let's get started.", zh: '我们开始吧。' },
+  words: [
+    { w: 'doing', zh: '做；进行', note: 'How you doing 是美式问候' },
+    { w: 'get started', zh: '开始' },
   ],
+  sentences: [
+    { start: 1.2, end: 4.5, en: 'How you doing?', zh: '你好吗？' },
+    { start: 5.0, end: 8.0, en: "I'm doing great.", zh: '我很好。' },
+  ],
+  dialogues: [
+    {
+      scene: '见面问候',
+      lines: [
+        { speaker: 'parent', en: 'How you doing?', zh: '你好吗？' },
+        { speaker: 'child', en: "I'm doing great, thanks!", zh: '我很好，谢谢！' },
+      ],
+      tip: '见面时互相问一遍',
+    },
+  ],
+  guide: {
+    goal: '听懂 How you doing，会说 I\'m doing great',
+    before: ['跟孩子说：今天学怎么用英语打招呼'],
+    after: ['How you doing 是什么意思？'],
+  },
 }
 
 const sampleDay = {
@@ -25,6 +44,7 @@ const sampleDay = {
   ],
 }
 
+// 旧格式字幕(只有全量 sentences):练习面板的短句板照常渲染,验证兼容
 const multiMaterialDay = {
   date: '2026-09-16',
   checked: false,
@@ -98,19 +118,44 @@ describe('Play.vue core interactions', () => {
     restoreFetch()
   })
 
-  it('renders sentences and highlights current sentence by video time', async () => {
+  it('renders practice panel: word chips, key sentences, dialogue (V2.0)', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
 
+    expect(wrapper.findAll('.tab').length).toBe(2)
+    expect(wrapper.findAll('.word-chip').length).toBe(2)
+
     const cards = wrapper.findAll('.sentence-card')
-    expect(cards.length).toBe(3)
+    expect(cards.length).toBe(2)
     expect(cards[0].find('.en').text()).toBe('How you doing?')
 
-    const video = wrapper.find('video').element
-    await dispatchTimeUpdate(video, 6.5)
-    expect(wrapper.findAll('.sentence-card')[1].classes()).toContain('active')
+    expect(wrapper.findAll('.line').length).toBe(2)
+    expect(wrapper.findAll('.repeat-mini').length).toBe(1) // 每段对话一个「跟读本段」按钮
+    expect(wrapper.text()).toContain('【见面问候】')
+  })
 
-    await dispatchTimeUpdate(video, 10)
-    expect(wrapper.findAll('.sentence-card')[2].classes()).toContain('active')
+  it('switches to the guide tab and shows the parent script', async () => {
+    const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
+
+    await wrapper.findAll('.tab')[1].trigger('click')
+    expect(wrapper.find('.goal-card').text()).toContain('听懂 How you doing')
+    expect(wrapper.text()).toContain('跟孩子说：今天学怎么用英语打招呼')
+    expect(wrapper.text()).toContain('How you doing 是什么意思？')
+    expect(wrapper.find('.sentence-card').exists()).toBe(false)
+
+    await wrapper.findAll('.tab')[0].trigger('click')
+    expect(wrapper.find('.sentence-card').exists()).toBe(true)
+  })
+
+  it('clicking a word chip opens the repeat modal with the word as reference', async () => {
+    const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-14' } }, '/play/2026-09-14')
+
+    await wrapper.findAll('.word-chip')[0].trigger('click')
+    expect(wrapper.find('.repeat-modal').exists()).toBe(true)
+    expect(wrapper.find('.repeat-modal').text()).toContain('doing')
+
+    await wrapper.find('.repeat-modal .icon-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.repeat-modal').exists()).toBe(false)
   })
 
   it('clicking the timestamp button seeks video to its start and plays', async () => {
@@ -204,18 +249,25 @@ describe('Play.vue core interactions', () => {
     expect(wrapper.find('video').exists()).toBe(true)
   })
 
-  it('switches materials and updates the sentence panel', async () => {
+  it('switches materials via compact number chips and updates the practice panel', async () => {
     const { wrapper } = await mountWithRouter(Play, { props: { date: '2026-09-16' } }, '/play/2026-09-16')
 
     const chips = wrapper.findAll('.chip')
     expect(chips.length).toBe(2)
+    // 紧凑分集:只显示序号,全集名进 title 悬停
+    expect(chips[0].text()).toBe('1')
+    expect(chips[1].text()).toBe('2')
+    expect(chips[1].attributes('title')).toBe('餐厅对话')
     expect(chips[0].classes()).toContain('active')
+    // 标题行显示选中素材的完整名称
+    expect(wrapper.find('.drawer-title').text()).toBe('点餐用语')
     expect(wrapper.findAll('.sentence-card')[0].find('.en').text()).toBe('Can I have a menu?')
 
     await chips[1].trigger('click')
     await new Promise((r) => setTimeout(r, 10))
 
     expect(wrapper.findAll('.chip')[1].classes()).toContain('active')
+    expect(wrapper.find('.drawer-title').text()).toBe('餐厅对话')
     expect(wrapper.findAll('.sentence-card')[0].find('.en').text()).toBe('Table for two.')
   })
 

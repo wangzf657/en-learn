@@ -4,7 +4,8 @@ import { adminApi } from '../api.js'
 import { parseSrt } from '../utils/srt.js'
 import SubtitleOverlay from '../components/SubtitleOverlay.vue'
 import SubtitleStylePicker from '../components/SubtitleStylePicker.vue'
-import SubtitlePanel from '../components/SubtitlePanel.vue'
+import PracticePanel from '../components/PracticePanel.vue'
+import RepeatModal from '../components/RepeatModal.vue'
 
 const videoEl = ref(null)
 const stageRef = ref(null)
@@ -17,7 +18,6 @@ const currentTime = ref(0)
 const duration = ref(0)
 const playing = ref(false)
 const srtCues = ref([])
-const sentences = ref([])
 const error = ref('')
 const subtitleStyle = ref('sub-clean')
 const loadingCourses = ref(false)
@@ -25,20 +25,24 @@ const loadingMaterials = ref(new Set())
 const isFullscreen = ref(false)
 const sidebarExpanded = ref(true)
 
+const repeatOpen = ref(false)
+const repeatSentence = ref(null)
+
 let srtReqId = 0
-// 浮层字幕只用视频同目录同名 .srt(原样渲染);台词面板走内嵌 JSON(sentences)。
+// 浮层字幕只用视频同目录同名 .srt(原样渲染);练习面板走内嵌教学 JSON(V2.0 四板)。
 const cues = computed(() => srtCues.value)
 
-const currentIndex = computed(() => {
-  const list = sentences.value
-  if (!list.length) return -1
-  const t = currentTime.value
-  for (let i = 0; i < list.length; i++) {
-    if (t >= list[i].start && t < list[i].end) return i
-  }
-  if (t >= list[list.length - 1].end) return list.length - 1
-  return -1
-})
+const practice = computed(() => selectedMaterial.value?.subtitle || {})
+
+function openRepeat(s) {
+  repeatSentence.value = s
+  repeatOpen.value = true
+  videoEl.value?.pause()
+}
+
+function closeRepeat() {
+  repeatOpen.value = false
+}
 
 const selectedCourseMaterials = computed(() => {
   if (!selectedCourseId.value) return []
@@ -99,7 +103,6 @@ async function playMaterial(material) {
   currentTime.value = 0
   duration.value = 0
   srtCues.value = []
-  sentences.value = material.subtitle?.sentences || []
 
   const v = videoEl.value
   if (v) {
@@ -344,16 +347,20 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <SubtitlePanel
+        <PracticePanel
           v-if="selectedMaterial"
-          title="台词"
-          :sentences="sentences"
-          :current-index="currentIndex"
-          empty-text="该素材暂无台词数据"
+          :practice="practice"
           @seek="seekToSentence"
+          @repeat="openRepeat"
         />
       </aside>
     </div>
+
+    <RepeatModal
+      :open="repeatOpen"
+      :sentence="repeatSentence"
+      @close="closeRepeat"
+    />
   </div>
 </template>
 

@@ -1,70 +1,151 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "EnLearn 字幕 JSON",
-  "description": "字幕数据结构的唯一权威(原 docs/subtitle-contract.md 字段表)。校验执行:导入硬校验 = main.py normalize_subtitle();强约定校验(含跨字段/语义规则超集)= .agents/skills/srt-to-json/scripts/srt_tool.py check。校验分层、存储传输、时间轴语义等 app 侧说明见 docs/design.md §4。",
+  "title": "EnLearn 带学练习卡 JSON(V2.0 提炼式)",
+  "description": "教学数据结构的唯一权威。V2.0 起从「全台词逐句富化」转向「提炼式带学练习卡」:不再包含全部台词,只保留四板——重点单词/重点短句/亲子场景对话/家长带学脚本。播放页浮层字幕由 srt 轨独立负责,与本 JSON 无关。校验执行:导入硬校验 = main.py normalize_subtitle()(四板浅校验,任一板存在即可);强约定校验(逐字对齐/词块子序列/枚举/必填键)= srt_tool.py check。旧格式(顶层全量 sentences)在 app 侧继续兼容透传,前端遇旧数据走空态。",
   "type": "object",
-  "required": ["sentences"],
   "additionalProperties": true,
+  "anyOf": [
+    { "required": ["words"] },
+    { "required": ["sentences"] },
+    { "required": ["dialogues"] },
+    { "required": ["guide"] }
+  ],
   "properties": {
+    "words": {
+      "type": "array",
+      "description": "重点单词/词块,4-8 个为宜;从本集原声文本提炼,启蒙优先:常用词组/固定搭配优先于单字",
+      "items": { "$ref": "#/$defs/word" }
+    },
     "sentences": {
       "type": "array",
-      "description": "按 start 升序;元素顺序即前端渲染顺序;空数组 = 无字幕(合法)",
+      "description": "重点短句,3-6 句为宜;是 SRT 清洗合并后原声句的「重点子集」(不再是全量),按 start 升序",
       "items": { "$ref": "#/$defs/sentence" }
-    }
+    },
+    "dialogues": {
+      "type": "array",
+      "description": "亲子场景对话练习,1-3 个;从本集内容拓展「生成」(不是原文),供家长和孩子在生活中演出来",
+      "items": { "$ref": "#/$defs/dialogue" }
+    },
+    "guide": { "$ref": "#/$defs/guide" }
   },
   "$defs": {
+    "word": {
+      "type": "object",
+      "required": ["w", "zh"],
+      "properties": {
+        "w": {
+          "type": "string",
+          "description": "表层形:本集原声文本中出现的连续词块(1-3 个词,如 fix it / boys and girls),照原样含缩写/变形与词组空格,不还原词干;供前端词块跟读与讲解"
+        },
+        "zh": {
+          "type": "string",
+          "description": "中文释义,自然口语"
+        },
+        "note": {
+          "type": "string",
+          "description": "≤20 字中文讲解(怎么说/什么时候说),口语化短句;宁缺毋滥"
+        }
+      }
+    },
     "sentence": {
       "type": "object",
-      "required": ["start", "end", "en"],
+      "required": ["start", "end", "en", "zh"],
       "properties": {
         "start": {
           "type": "number",
           "minimum": 0,
-          "description": "起始时间(秒);点击句子 seek 到此"
+          "description": "起始时间(秒):必须与所选出处原声 cue 的 start 逐秒一致;点击短句 seek 到此"
         },
         "end": {
           "type": "number",
-          "description": "结束时间(秒)。必须 > start——跨字段比较 JSON Schema 表达不了,由 srt_tool check 强约定拦截"
+          "description": "结束时间(秒):同上,须与原声 cue 一致且 > start——跨字段比较由 srt_tool check 强约定拦截"
         },
         "en": {
           "type": "string",
-          "description": "英文原文:一个完整、可独立跟读的语句单元(不是 cue 碎片);同时是跟读评分参考文本,逐字不得改写"
+          "description": "英文原文:逐字复制自原声句(清洗合并后的 cue 文本),禁止任何改写;同时是跟读评分参考文本"
         },
         "zh": {
           "type": "string",
-          "description": "中文翻译,自然口语,不逐词硬译"
-        },
-        "words": {
-          "type": "array",
-          "description": "教学条目:常用词组/短语或启蒙高频单字,每句 0-5 个为宜(软上限)",
-          "items": { "$ref": "#/$defs/word" }
+          "description": "中文翻译,自然口语、儿童动画对白语气"
         },
         "note": {
           "type": "string",
-          "description": "整句笔记(句型/语法点)。前端当前未渲染;宁缺毋滥"
+          "description": "≤40 字句型/语法点;宁缺毋滥,没有教学价值就不写该键"
         }
       }
     },
-    "word": {
+    "dialogue": {
       "type": "object",
-      "description": "教学条目:单词或词组(短句/固定搭配)",
-      "required": ["w"],
+      "required": ["scene", "lines"],
       "properties": {
-        "w": {
+        "scene": {
           "type": "string",
-          "description": "表层形:en 中出现的连续片段(单词或词组),照原样含缩写/变形与词组空格,不还原词干;供前端词块朗读与讲解"
+          "description": "场景标题(中文,如「玩具坏了」):从本集内容迁移到孩子的日常生活"
         },
-        "phonetic": {
-          "type": "string",
-          "pattern": "^[^/]*$",
-          "description": "已废弃(不再生成);旧数据兼容。美式 IPA 音标,裸串不含斜杠(前端渲染时自加 /…/)"
+        "lines": {
+          "type": "array",
+          "minItems": 2,
+          "description": "对话行,4-8 行为宜;parent/child 交替,单词句优先(启蒙可说出口的长度)",
+          "items": { "$ref": "#/$defs/dialogueLine" }
         },
-        "note": {
+        "tip": {
           "type": "string",
-          "description": "中文讲解(词组含义/怎么说/何时用),口语化短句"
+          "description": "给家长的玩法提示(拿真玩具演/边做动作边说),可选"
+        }
+      }
+    },
+    "dialogueLine": {
+      "type": "object",
+      "required": ["speaker", "en", "zh"],
+      "properties": {
+        "speaker": {
+          "type": "string",
+          "enum": ["parent", "child"],
+          "description": "说话人:parent=家长说(点行朗读示范),child=孩子说(可跟读评分)"
+        },
+        "en": {
+          "type": "string",
+          "description": "英文台词:生成内容,地道、启蒙词汇量内;无 HTML 标签"
+        },
+        "zh": {
+          "type": "string",
+          "description": "中文对照"
+        }
+      }
+    },
+    "guide": {
+      "type": "object",
+      "description": "家长带学脚本:让家长从「播放器操作员」变「共学主持」,一集一张、30 秒读完",
+      "required": ["goal", "before", "after"],
+      "properties": {
+        "goal": {
+          "type": "string",
+          "description": "本集目标,一句话说清「听懂/说出哪些词句」(如「听懂并说出 broken / fix it」)"
+        },
+        "before": {
+          "type": "array",
+          "minItems": 1,
+          "description": "播前钩子:开看前家长跟孩子说的话(中文即可),勾起期待、带着问题看",
+          "items": { "type": "string" }
+        },
+        "during": {
+          "type": "array",
+          "description": "播中互动(TPR 动作绑定/跟唱指令),可选",
+          "items": { "type": "string" }
+        },
+        "after": {
+          "type": "array",
+          "minItems": 1,
+          "description": "播后提问:看完问孩子的 1-3 个问题,引导说出本集核心词句",
+          "items": { "type": "string" }
+        },
+        "tips": {
+          "type": "array",
+          "description": "给家长的提示(自身发音难点/易错点),可选",
+          "items": { "type": "string" }
         }
       }
     }
   },
-  "$comment": "演进规则:只增可选字段(旧数据不迁移即兼容);不改名、不改语义(要改就新增字段、废弃旧字段,前端两代同读);前端对未知字段一律忽略,故不锁 additionalProperties;单机自用,不引入 version 字段。改结构先改本文件,再改代码。"
+  "$comment": "演进规则:V2.0 是一次显式结构性改版(sentences 语义从「全量台词」变为「重点短句子集」,存量旧格式需重新生成;207 集批量再生成细则见 BATCH_BRIEF.md)。改版后恢复既有规则:只增可选字段(旧数据不迁移即兼容);不改名、不改语义;前端对未知字段一律忽略,故不锁 additionalProperties;单机自用,不引入 version 字段。改结构先改本文件,再改代码。"
 }

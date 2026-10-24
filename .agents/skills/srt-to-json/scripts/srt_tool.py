@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""EnLearn SRT→教学字幕 JSON 的结构层工具与校验器。
+"""EnLearn SRT→带学练习卡 JSON(V2.0 提炼式)的结构层工具与校验器。
 
 结构权威:subtitle.schema.json(本 skill 目录);流程与质量要求:.agents/skills/srt-to-json/SKILL.md。
 
-首要规则:清洗后的"句"是一等公民 = 逐条独立 cue;卡拉OK式逐词高亮源(同句每高亮
-一词就重复一条 cue)的**相邻同文 cue 由脚本机械合并为一句**,时间取并集。JSON 的
-sentences 与合并后的句一一对应(数量、顺序、start/end、en 文本全一致);除该合并外
-禁止合并/拆分/改写,人和 agent 都不动结构,一切以原 SRT 为准。
+V2.0 契约:成品 JSON 是四板提炼(重点单词 words / 重点短句 sentences / 亲子对话
+dialogues / 家长带学 guide),不再包含全量台词。原声句仍是一等公民:sentences 必须
+是 SRT 清洗合并后原声句的「重点子集」(en 逐字、start/end 逐秒一致,只能选不能造);
+words.w 是全集文本的表层连续词块;dialogues/guide 是生成内容(结构+枚举校验)。
 
 用法:
-  python srt_tool.py draft <文件夹 | 单个.srt> [--force]   # SRT → 结构 JSON(自动合并卡拉OK同文 cue)
-  python srt_tool.py check <文件夹 | a.srt a.json>         # 契约 + 逐句对齐 + 守恒校验
-  python srt_tool.py dedup <文件夹 | 单个.srt>             # 存量修复:就地合并旧 json 的相邻同文句
+  python srt_tool.py draft <文件夹 | 单个.srt> [--force]   # SRT → 全量句骨架(提炼候选池)
+  python srt_tool.py check <文件夹 | a.srt a.json>         # 四板契约 + 子集对齐校验
   python srt_tool.py selftest                              # 内置样例自检
 """
 import argparse
@@ -30,10 +29,12 @@ BRACKET_RE = re.compile(r"^\[[^\]]*\]$")  # [music] [laughter] 等注解行
 
 ALIGN_TOL = 1e-6  # 时间戳对齐容差(秒)
 
-
-def _norm(s: str) -> str:
-    """守恒比对:统一撇号、小写、只留字母数字。"""
-    return re.sub(r"[^a-z0-9]", "", s.replace("\u2019", "'").lower())
+# 数量软上限(超出仅 WARN,见 SKILL.md §2)
+WORDS_LIMIT = 8
+SENTENCES_LIMIT = 6
+DIALOGUES_LIMIT = 3
+DIALOGUE_LINES_LIMIT = 8
+SPEAKERS = ("parent", "child")
 
 
 def _tokens(s: str):
@@ -99,7 +100,7 @@ def parse_srt(path: Path):
 
 
 def _normalize(cues):
-    """源 SRT 时间轴缺陷的确定性清洗(卡拉OK式逐词高亮字幕常见),保证红线 6:
+    """源 SRT 时间轴缺陷的确定性清洗(卡拉OK式逐词高亮字幕常见),保单调不重叠:
 
     1. 首尾颠倒(end < start,1ms 级零长高亮帧)→ 交换起止
     2. 相邻 cue 重叠(高亮 cue 常提前开始,几毫秒到几百毫秒)→ 上一 cue 的 end 钳到本 cue 的 start
@@ -140,125 +141,195 @@ def _merge_karaoke(cues):
     return out
 
 
-def _merge_sents(sents):
-    """成品 JSON 句条目的合并(dedup 存量修复用):同 _merge_karaoke,键为 en,
-    并把后条的 zh/note/words 回填给首条(仅首条缺失时)——富化内容一条不丢。"""
-    out = []
-    for s in sents:
-        prev = out[-1] if out else None
-        if prev is not None and s.get("en") == prev.get("en"):
-            prev["end"] = s["end"]
-            for k in ("zh", "note"):
-                cur = prev.get(k)
-                if not (isinstance(cur, str) and cur.strip()):
-                    nv = s.get(k)
-                    if isinstance(nv, str) and nv.strip():
-                        prev[k] = nv
-            if not prev.get("words") and s.get("words"):
-                prev["words"] = s["words"]
-            continue
-        out.append(dict(s))
-    return out
-
-
 def _span_in(tokens, need):
     """need 是否为 tokens 的连续子序列(两侧已统一小写/撇号)。
 
-    单元素 = 单词须精确命中 token;多元素 = 词组须与 en 中一段连续词完全一致。
+    单元素 = 单词须精确命中 token;多元素 = 词组须与一段连续词完全一致。
     """
     return any(tokens[i : i + len(need)] == need for i in range(len(tokens) - len(need) + 1))
 
 
+def _nonempty_str(v):
+    return isinstance(v, str) and v.strip()
+
+
 def check_pair(srt: Path, js: Path):
-    """校验富化后的 JSON。返回 (errors, warnings);errors 非空 = 不可交付。"""
+    """校验提炼后的 JSON(V2.0 四板契约)。返回 (errors, warnings);errors 非空 = 不可交付。"""
     errs, warns = [], []
     try:
         data = json.loads(js.read_text(encoding="utf-8-sig"))
     except Exception as e:
         return [f"{js.name}: JSON 解析失败: {e}"], []
-    if not isinstance(data, dict) or not isinstance(data.get("sentences"), list):
-        return [f"{js.name}: 必须是含 sentences 数组的对象"], []
-    sents = data["sentences"]
+    if not isinstance(data, dict):
+        return [f"{js.name}: 必须是对象"], []
     cues = parse_srt(srt)
+    cue_map = {}  # 原声句精确文本 → [(start, end)](同文句可多次出现)
+    for c in cues:
+        cue_map.setdefault(c["text"], []).append((c["start"], c["end"]))
+    full_tokens = _tokens(" ".join(c["text"] for c in cues))  # words 板的比对基准
 
-    # 首要规则:逐句与原句(卡拉OK同文 cue 已合并)对齐(数量/时间戳/文本)
-    if len(sents) != len(cues):
-        errs.append(
-            f"{js.name}: 句数 {len(sents)} ≠ 原 SRT 句数 {len(cues)}"
-            f"(卡拉OK同文 cue 已由脚本合并;禁止再合并/拆分/增删)"
-        )
+    def check_text(tag, s):
+        """en 类文本公共检查:非空、无首尾空白、无 HTML 残留。"""
+        if not s.strip():
+            errs.append(f"{tag}: 文本为空")
+        if s != s.strip():
+            errs.append(f"{tag}: 首尾有空白")
+        if TAG_RE.search(s):
+            errs.append(f"{tag}: 残留 HTML 标签")
 
-    prev_end, all_en = None, ""
-    for i, s in enumerate(sents):
-        tag = f"{js.name} 第{i + 1}句"
-        if not isinstance(s, dict):
-            errs.append(f"{tag}: 不是对象")
-            continue
-        if (
-            not isinstance(s.get("start"), (int, float))
-            or not isinstance(s.get("end"), (int, float))
-            or not isinstance(s.get("en"), str)
-        ):
-            errs.append(f"{tag}: start/end 必须数字、en 必须字符串(服务端 422)")
-            continue
-        en = s["en"]
-        all_en += en
-        if s["end"] <= s["start"]:
-            errs.append(f"{tag}: end 必须大于 start")
-        if prev_end is not None and s["start"] < prev_end:
-            errs.append(f"{tag}: 与上一句时间重叠或乱序")
-        prev_end = s["end"]
-        if not en.strip():
-            errs.append(f"{tag}: en 为空")
-        if en != en.strip():
-            errs.append(f"{tag}: en 首尾有空白")
-        if TAG_RE.search(en):
-            errs.append(f"{tag}: en 残留 HTML 标签")
-        if i < len(cues):
-            c = cues[i]
-            if abs(s["start"] - c["start"]) > ALIGN_TOL or abs(s["end"] - c["end"]) > ALIGN_TOL:
-                errs.append(
-                    f"{tag}: 时间戳与原 cue 不对齐"
-                    f"(原 {c['start']:g}–{c['end']:g},现 {s['start']:g}–{s['end']:g})"
-                )
-            if en != c["text"]:
-                errs.append(f"{tag}: en 与原 cue 文本不一致(原「{c['text'][:60]}」,禁止改写)")
+    boards = 0
+
+    # ---- sentences:重点短句(原声句的重点子集,只能选不能造) ----
+    sents = data.get("sentences")
+    if sents is not None:
+        if not isinstance(sents, list):
+            errs.append(f"{js.name}: sentences 必须是数组")
         else:
-            errs.append(f"{tag}: 超出原 SRT cue 条数(禁止造句)")
-        ws = s.get("words")
-        if ws is not None:
-            if not isinstance(ws, list):
-                errs.append(f"{tag}: words 必须是数组")
-            else:
-                if len(ws) > 5:
-                    warns.append(f"{tag}: words {len(ws)} 个 > 5,建议精简")
-                tokens = _tokens(en)
-                for j, w in enumerate(ws):
-                    wtag = f"{tag} words[{j}]"
-                    if not isinstance(w, dict) or not isinstance(w.get("w"), str) or not w["w"].strip():
-                        errs.append(f"{wtag}: 缺 w 或非字符串")
-                        continue
-                    w_tokens = _tokens(w["w"])
-                    if not w_tokens:
-                        errs.append(f"{wtag}: w '{w['w']}' 不含有效词")
-                        continue
-                    if not _span_in(tokens, w_tokens):
-                        errs.append(f"{wtag}: w '{w['w']}' 不是 en 中的表层连续片段(单词/词组须与 en 一致)")
-                    ph = w.get("phonetic")
-                    if ph is not None and (not isinstance(ph, str) or not ph.strip()):
-                        errs.append(f"{wtag}: phonetic 空串(删掉该键)")
-                    if isinstance(ph, str) and "/" in ph:
-                        errs.append(f"{wtag}: phonetic 含斜杠(前端渲染自加 /…/)")
-                    n = w.get("note")
-                    if n is not None and (not isinstance(n, str) or not n.strip()):
-                        errs.append(f"{wtag}: note 空串(删掉该键)")
-        for key in ("zh", "note"):
-            v = s.get(key)
-            if v is not None and (not isinstance(v, str) or not v.strip()):
-                errs.append(f"{tag}: {key} 空串(删掉该键)")
+            boards += 1 if sents else 0  # 空数组不占板块(防空壳)
+            if len(sents) > SENTENCES_LIMIT:
+                warns.append(f"{js.name}: sentences {len(sents)} 句 > {SENTENCES_LIMIT},建议精简")
+            if len(sents) < 3:
+                warns.append(f"{js.name}: sentences 仅 {len(sents)} 句 < 3,建议补选")
+            seen, prev_start = set(), None
+            for i, s in enumerate(sents):
+                tag = f"{js.name} 第{i + 1}句"
+                if not isinstance(s, dict):
+                    errs.append(f"{tag}: 不是对象")
+                    continue
+                en = s.get("en")
+                if not isinstance(en, str):
+                    errs.append(f"{tag}: en 必须字符串(服务端 422)")
+                    continue
+                check_text(tag, en)
+                st, ed = s.get("start"), s.get("end")
+                if not isinstance(st, (int, float)) or not isinstance(ed, (int, float)):
+                    errs.append(f"{tag}: start/end 必须数字")
+                else:
+                    if ed <= st:
+                        errs.append(f"{tag}: end 必须大于 start")
+                    if prev_start is not None and st < prev_start:
+                        errs.append(f"{tag}: 与上一句乱序(按 start 升序)")
+                    prev_start = st
+                    hits = cue_map.get(en)
+                    if hits is None:
+                        errs.append(f"{tag}: 不是原声句「{en[:60]}」(只能选,不能造/改写)")
+                    elif not any(
+                        abs(st - a) <= ALIGN_TOL and abs(ed - b) <= ALIGN_TOL for a, b in hits
+                    ):
+                        a, b = hits[0]
+                        errs.append(
+                            f"{tag}: 时间戳与原声 cue 不对齐(原 {a:g}–{b:g},现 {st:g}–{ed:g})"
+                        )
+                if en in seen:
+                    warns.append(f"{tag}: 重复选择同一句")
+                seen.add(en)
+                if not _nonempty_str(s.get("zh")):
+                    errs.append(f"{tag}: zh 必填(V2.0 生成契约)")
+                n = s.get("note")
+                if n is not None and not _nonempty_str(n):
+                    errs.append(f"{tag}: note 空串(删掉该键)")
 
-    if _norm(" ".join(c["text"] for c in cues)) != _norm(all_en):
-        errs.append(f"{js.name}: 文本守恒失败——en 与 SRT 不一致(丢句/造句/改写)")
+    # ---- words:重点单词/词块(全集表层连续片段) ----
+    ws = data.get("words")
+    if ws is not None:
+        if not isinstance(ws, list):
+            errs.append(f"{js.name}: words 必须是数组")
+        else:
+            boards += 1 if ws else 0
+            if len(ws) > WORDS_LIMIT:
+                warns.append(f"{js.name}: words {len(ws)} 条 > {WORDS_LIMIT},建议精简")
+            for j, w in enumerate(ws):
+                wtag = f"{js.name} words[{j}]"
+                if not isinstance(w, dict) or not _nonempty_str(w.get("w")):
+                    errs.append(f"{wtag}: 缺 w 或非字符串")
+                    continue
+                w_tokens = _tokens(w["w"])
+                if not w_tokens:
+                    errs.append(f"{wtag}: w '{w['w']}' 不含有效词")
+                elif not _span_in(full_tokens, w_tokens):
+                    errs.append(f"{wtag}: w '{w['w']}' 不是本集原声文本的表层连续片段")
+                if not _nonempty_str(w.get("zh")):
+                    errs.append(f"{wtag}: zh 必填(V2.0 生成契约)")
+                n = w.get("note")
+                if n is not None and not _nonempty_str(n):
+                    errs.append(f"{wtag}: note 空串(删掉该键)")
+
+    # ---- dialogues:亲子场景对话(生成内容,结构+枚举校验) ----
+    ds = data.get("dialogues")
+    if ds is not None:
+        if not isinstance(ds, list):
+            errs.append(f"{js.name}: dialogues 必须是数组")
+        else:
+            boards += 1 if ds else 0
+            if len(ds) > DIALOGUES_LIMIT:
+                warns.append(f"{js.name}: dialogues {len(ds)} 个 > {DIALOGUES_LIMIT},建议精简")
+            for i, d in enumerate(ds):
+                dtag = f"{js.name} dialogues[{i}]"
+                if not isinstance(d, dict):
+                    errs.append(f"{dtag}: 不是对象")
+                    continue
+                if not _nonempty_str(d.get("scene")):
+                    errs.append(f"{dtag}: 缺 scene(非空中文场景名)")
+                lines = d.get("lines")
+                if not isinstance(lines, list) or not lines:
+                    errs.append(f"{dtag}: lines 必须是非空数组")
+                    continue
+                if len(lines) > DIALOGUE_LINES_LIMIT:
+                    warns.append(f"{dtag}: lines {len(lines)} 行 > {DIALOGUE_LINES_LIMIT},建议精简")
+                for k, ln in enumerate(lines):
+                    ltag = f"{dtag} lines[{k}]"
+                    if not isinstance(ln, dict):
+                        errs.append(f"{ltag}: 不是对象")
+                        continue
+                    en = ln.get("en")
+                    if not _nonempty_str(en):
+                        errs.append(f"{ltag}: 缺 en")
+                    else:
+                        check_text(ltag, en)
+                    if ln.get("speaker") not in SPEAKERS:
+                        errs.append(f"{ltag}: speaker 必须是 parent/child")
+                    if not _nonempty_str(ln.get("zh")):
+                        errs.append(f"{ltag}: zh 必填")
+                tip = d.get("tip")
+                if tip is not None and not _nonempty_str(tip):
+                    errs.append(f"{dtag}: tip 空串(删掉该键)")
+
+    # ---- guide:家长带学脚本 ----
+    g = data.get("guide")
+    if g is not None:
+        if not isinstance(g, dict):
+            errs.append(f"{js.name}: guide 必须是对象")
+        else:
+            boards += 1 if g else 0
+            if not _nonempty_str(g.get("goal")):
+                errs.append(f"{js.name}: guide.goal 必填(一句话目标)")
+            for key in ("before", "after"):
+                v = g.get(key)
+                if not isinstance(v, list) or not v:
+                    errs.append(f"{js.name}: guide.{key} 必填且至少 1 条")
+                else:
+                    for k, item in enumerate(v):
+                        if not _nonempty_str(item):
+                            errs.append(f"{js.name}: guide.{key}[{k}] 空串")
+            for key in ("during", "tips"):
+                v = g.get(key)
+                if v is None:
+                    continue
+                if not isinstance(v, list):
+                    errs.append(f"{js.name}: guide.{key} 必须是数组")
+                else:
+                    for k, item in enumerate(v):
+                        if not _nonempty_str(item):
+                            errs.append(f"{js.name}: guide.{key}[{k}] 空串")
+
+    if boards == 0:
+        errs.append(f"{js.name}: 四板(words/sentences/dialogues/guide)至少一板存在")
+    if (
+        isinstance(sents, list)
+        and len(sents) == len(cues)
+        and ws is None and ds is None and g is None
+    ):
+        warns.append(f"{js.name}: 疑似旧格式(全量台词 {len(sents)} 句、无其他板块),需按 V2.0 重新提炼")
     return errs, warns
 
 
@@ -278,51 +349,7 @@ def cmd_draft(args):
         out.write_text(
             json.dumps({"sentences": sents}, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        print(f"DRAFT {out}: {len(sents)} 句(相邻同文卡拉OK cue 已合并)")
-
-
-def cmd_dedup(args):
-    """存量修复:旧规则生成的成品 JSON(卡拉OK重复条未合并)就地机械合并。
-
-    只按"相邻同文"合并,zh/note/words 富化字段一条不丢;合并后立即 check 全绿才算过。
-    """
-    src = Path(args.path)
-    srts = sorted(src.rglob("*.srt")) if src.is_dir() else [src]
-    if not srts or not all(p.is_file() for p in srts):
-        sys.exit(f"ERROR 找不到 SRT: {args.path}")
-    failed = False
-    for srt in srts:
-        js = subtitle_json_path(srt)
-        if not js.exists():
-            print(f"MISS {srt.stem}(无 json)")
-            continue
-        try:
-            data = json.loads(js.read_text(encoding="utf-8-sig"))
-        except Exception as e:
-            print(f"ERROR {js.name}: JSON 解析失败: {e}")
-            failed = True
-            continue
-        sents = data.get("sentences") if isinstance(data, dict) else None
-        if not isinstance(sents, list):
-            print(f"ERROR {js.name}: 必须是含 sentences 数组的对象")
-            failed = True
-            continue
-        merged = _merge_sents(sents)
-        if len(merged) == len(sents):
-            print(f"OK {js.name}: 无相邻重复,{len(sents)} 句")
-            continue
-        data["sentences"] = merged
-        js.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        errs, _ = check_pair(srt, js)
-        if errs:
-            failed = True
-            for e in errs:
-                print(f"ERROR {e}")
-        else:
-            print(f"MERGED {js.name}: {len(sents)} → {len(merged)} 句(check 全绿)")
-    sys.exit(1 if failed else 0)
+        print(f"DRAFT {out}: {len(sents)} 句候选池(相邻同文卡拉OK cue 已合并;供 AI 提炼,非交付形态)")
 
 
 def cmd_check(args):
@@ -370,10 +397,38 @@ doing?
 what is this
 """
 
+KARAOKE_SRT = """1
+00:00:32,808 --> 00:00:33,245\nRaccoon: Watch me hop!
+
+2
+00:00:33,246 --> 00:00:33,503
+Raccoon: <font color="#ffff00">Watch</font> me hop!
+
+3
+00:00:33,504 --> 00:00:33,733
+Raccoon: Watch <font color="#ffff00">me</font> hop!
+
+4
+00:00:33,734 --> 00:00:34,188
+Raccoon: Watch me <font color="#ffff00">hop</font>!
+
+5
+00:00:34,189 --> 00:00:40,535\nRaccoon: Watch me hop!
+
+6
+00:00:40,536 --> 00:00:41,260\nTurtle: I can't hop.
+"""
+
+
+def _write(path: Path, data):
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
 
 def cmd_selftest(args):
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
+
+        # --- 结构层(draft 层,与 V1 相同):清洗/落盘契约/时间轴规范化/卡拉OK合并 ---
         sub = d / "01_测试"  # 规范形态:srt/json 都在素材同名文件夹内
         sub.mkdir()
         srt = sub / "01_测试.srt"
@@ -411,96 +466,102 @@ def cmd_selftest(args):
         sub4 = d / "04_卡拉OK"
         sub4.mkdir()
         srt4 = sub4 / "04_卡拉OK.srt"
-        srt4.write_text(
-            "1\n00:00:32,808 --> 00:00:33,245\nRaccoon: Watch me hop!\n\n"
-            "2\n00:00:33,246 --> 00:00:33,503\n"
-            'Raccoon: <font color="#ffff00">Watch</font> me hop!\n\n'
-            "3\n00:00:33,504 --> 00:00:33,733\n"
-            'Raccoon: Watch <font color="#ffff00">me</font> hop!\n\n'
-            "4\n00:00:33,734 --> 00:00:34,188\n"
-            'Raccoon: Watch me <font color="#ffff00">hop</font>!\n\n'
-            "5\n00:00:34,189 --> 00:00:40,535\nRaccoon: Watch me hop!\n\n"
-            "6\n00:00:40,536 --> 00:00:41,260\nTurtle: I can't hop.\n",
-            encoding="utf-8",
-        )
+        srt4.write_text(KARAOKE_SRT, encoding="utf-8")
         assert [(round(c["start"], 6), round(c["end"], 6), c["text"]) for c in parse_srt(srt4)] == [
             (32.808, 40.535, "Raccoon: Watch me hop!"),  # 5 条同文 cue 并 1 句
             (40.536, 41.26, "Turtle: I can't hop."),  # 下一句不同文,不并入
         ]
+
+        # --- V2.0 提炼式 check ---
         js4 = subtitle_json_path(srt4)
-        sents4 = [{"start": c["start"], "end": c["end"], "en": c["text"]} for c in parse_srt(srt4)]
-        js4.write_text(json.dumps({"sentences": sents4}, ensure_ascii=False), encoding="utf-8")
+
+        good = {
+            "words": [
+                {"w": "Watch me hop", "zh": "看我跳", "note": "邀人看自己动作"},
+                {"w": "hop", "zh": "跳"},
+            ],
+            "sentences": [
+                {"start": 32.808, "end": 40.535, "en": "Raccoon: Watch me hop!", "zh": "浣熊:看我跳!"},
+                {"start": 40.536, "end": 41.26, "en": "Turtle: I can't hop.", "zh": "乌龟:我不会跳。"},
+            ],
+            "dialogues": [
+                {
+                    "scene": "一起来跳",
+                    "lines": [
+                        {"speaker": "parent", "en": "Watch me hop!", "zh": "看我跳!"},
+                        {"speaker": "child", "en": "I can hop too!", "zh": "我也能跳!"},
+                        {"speaker": "parent", "en": "Great job!", "zh": "跳得真棒!"},
+                    ],
+                    "tip": "边说边跳",
+                }
+            ],
+            "guide": {
+                "goal": "听懂 hop,说出 Watch me hop",
+                "before": ["跟孩子说:乌龟不会跳,你猜谁会跳?"],
+                "after": ["hop 用英语怎么说?"],
+                "tips": ["hop 短促有力,别拖成 hooop"],
+            },
+        }
+        _write(js4, good)
+        errs, warns = check_pair(srt4, js4)
+        assert not errs, errs  # 四板齐、子集对齐、词块在全文 → 全绿
+
+        drift = json.loads(json.dumps(good))
+        drift["sentences"][0]["en"] = "Raccoon: Watch me JUMP!"  # 改写原声句
+        _write(js4, drift)
         errs, _ = check_pair(srt4, js4)
-        assert not errs, errs  # 合并形态与 check 自洽
+        assert any("不是原声句" in e for e in errs), errs
 
-        # dedup 存量修复:旧 json(重复条未合并,zh 全条都有、words 只在首条)→ 合并不丢富化
-        old = [
-            {"start": 32.808, "end": 33.245, "en": "Raccoon: Watch me hop!", "zh": "浣熊:看我跳!"},
-            {"start": 33.246, "end": 33.503, "en": "Raccoon: Watch me hop!", "zh": "浣熊:看我跳!"},
-            {"start": 33.504, "end": 34.188, "en": "Raccoon: Watch me hop!", "zh": "浣熊:看我跳!"},
-            {"start": 34.189, "end": 40.535, "en": "Raccoon: Watch me hop!", "zh": "浣熊:看我跳!"},
-        ]
-        old[0]["words"] = [{"w": "watch", "note": "看"}]
-        m = _merge_sents(old)
-        assert len(m) == 1, m
-        assert (round(m[0]["start"], 6), round(m[0]["end"], 6)) == (32.808, 40.535), m
-        assert m[0]["zh"] == "浣熊:看我跳!" and m[0]["words"] == [{"w": "watch", "note": "看"}], m
-        m2 = _merge_sents([  # 首条缺 zh 时由后条回填
-            {"start": 1.0, "end": 2.0, "en": "Hi."},
-            {"start": 2.0, "end": 3.0, "en": "Hi.", "zh": "你好。"},
-        ])
-        assert m2[0]["zh"] == "你好。" and round(m2[0]["end"], 6) == 3.0, m2
+        drift = json.loads(json.dumps(good))
+        drift["sentences"][0]["start"] = 33.5  # 时间戳漂移
+        _write(js4, drift)
+        errs, _ = check_pair(srt4, js4)
+        assert any("不对齐" in e for e in errs), errs
 
-        js.write_text(json.dumps({"sentences": sents}, ensure_ascii=False), encoding="utf-8")
-        errs, _ = check_pair(srt, js)
-        assert not errs, errs  # 结构层自产必须全绿
-        merged = {"sentences": [
-            {"start": 1.2, "end": 4.5, "en": "How you doing?"},
-            {"start": 6.1, "end": 7.9, "en": "what is this"},
+        drift = json.loads(json.dumps(good))
+        drift["sentences"][0]["zh"] = ""  # zh 缺失(生成契约)
+        _write(js4, drift)
+        errs, _ = check_pair(srt4, js4)
+        assert any("zh 必填" in e for e in errs), errs
+
+        drift = json.loads(json.dumps(good))
+        drift["words"][0]["w"] = "jump"  # 不在原声文本
+        _write(js4, drift)
+        errs, _ = check_pair(srt4, js4)
+        assert any("表层连续片段" in e for e in errs), errs
+
+        drift = json.loads(json.dumps(good))
+        drift["dialogues"][0]["lines"][0]["speaker"] = "teacher"  # 枚举外
+        _write(js4, drift)
+        errs, _ = check_pair(srt4, js4)
+        assert any("speaker" in e for e in errs), errs
+
+        drift = json.loads(json.dumps(good))
+        del drift["guide"]["after"]  # guide 必填键
+        _write(js4, drift)
+        errs, _ = check_pair(srt4, js4)
+        assert any("guide.after" in e for e in errs), errs
+
+        drift = json.loads(json.dumps(good))
+        drift["words"], drift["sentences"], drift["dialogues"], drift["guide"] = [], [], [], {}
+        _write(js4, drift)
+        errs, _ = check_pair(srt4, js4)
+        assert any("至少一板" in e for e in errs), errs
+
+        # 旧格式(全量台词+zh、无其他板块):结构上合法,但 WARN 提示重新提炼
+        old = {"sentences": [
+            {"start": 32.808, "end": 40.535, "en": "Raccoon: Watch me hop!", "zh": "浣熊:看我跳!"},
+            {"start": 40.536, "end": 41.26, "en": "Turtle: I can't hop.", "zh": "乌龟:我不会跳。"},
         ]}
-        js.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
-        errs, _ = check_pair(srt, js)
-        assert any("句数" in e for e in errs) and any("不一致" in e for e in errs), errs  # 合并被拦
-        js.write_text(json.dumps({"sentences": sents[:2]}, ensure_ascii=False), encoding="utf-8")
-        errs, _ = check_pair(srt, js)
-        assert any("守恒" in e for e in errs), errs  # 丢句必须被守恒校验拦下
-        drift = json.loads(json.dumps({"sentences": sents}))
-        drift["sentences"][0]["en"] = "How you."  # 只加了标点也算改写
-        js.write_text(json.dumps(drift, ensure_ascii=False), encoding="utf-8")
-        errs, _ = check_pair(srt, js)
-        assert any("不一致" in e for e in errs), errs
-        bad = {"sentences": [{"start": 1.2, "end": 2.1, "en": "How you",
-                              "words": [{"w": "hello", "phonetic": "/haɪ/"}]},
-                             {"start": 2.3, "end": 4.5, "en": "doing?"},
-                             {"start": 6.1, "end": 7.9, "en": "what is this"}]}
-        js.write_text(json.dumps(bad, ensure_ascii=False), encoding="utf-8")
-        errs, _ = check_pair(srt, js)
-        assert any("表层连续片段" in e for e in errs) and any("斜杠" in e for e in errs), errs
+        _write(js4, old)
+        errs, warns = check_pair(srt4, js4)
+        assert not errs and any("旧格式" in w for w in warns), (errs, warns)
 
-        # 词组(表层连续片段)应合法,且须与 en 连续一致(跳词/颠倒即拦)
-        sub2 = d / "02_词组"
-        sub2.mkdir()
-        srt2 = sub2 / "02_词组.srt"
-        srt2.write_text(
-            "1\n00:00:00,000 --> 00:00:01,000\nhello boys and girls\n",
-            encoding="utf-8",
-        )
-        js2 = d / "02_词组.json"
-        ok_phrase = {"sentences": [
-            {"start": 0.0, "end": 1.0, "en": "hello boys and girls",
-             "words": [{"w": "boys and girls", "note": "男孩女孩们"}]},
-        ]}
-        js2.write_text(json.dumps(ok_phrase, ensure_ascii=False), encoding="utf-8")
-        errs, _ = check_pair(srt2, js2)
-        assert not errs, errs  # 词组合法
-
-        bad_phrase = {"sentences": [
-            {"start": 0.0, "end": 1.0, "en": "hello boys and girls",
-             "words": [{"w": "boys girls"}]},
-        ]}
-        js2.write_text(json.dumps(bad_phrase, ensure_ascii=False), encoding="utf-8")
-        errs, _ = check_pair(srt2, js2)
-        assert any("表层连续片段" in e for e in errs), errs  # 跳词不连续,应拦
+        # draft 骨架(未提炼):不是原声句的问题没有,但 zh 必填全 ERROR = 不可交付
+        skeleton = {"sentences": [{"start": c["start"], "end": c["end"], "en": c["text"]} for c in parse_srt(srt4)]}
+        _write(js4, skeleton)
+        errs, _ = check_pair(srt4, js4)
+        assert any("zh 必填" in e for e in errs), errs
 
         # 单引号包裹的词('Dig!')应能匹配:作引号的撇号不并入词元
         sub5 = d / "05_引号"
@@ -510,12 +571,15 @@ def cmd_selftest(args):
             "1\n00:00:00,000 --> 00:00:01,000\n\"It says, 'Dig!'\" Zippy said.\n",
             encoding="utf-8",
         )
-        js5 = sub5 / "05_引号.json"
-        quoted = {"sentences": [
-            {"start": 0.0, "end": 1.0, "en": "\"It says, 'Dig!'\" Zippy said.",
-             "words": [{"w": "Dig", "note": "挖"}]},
-        ]}
-        js5.write_text(json.dumps(quoted, ensure_ascii=False), encoding="utf-8")
+        js5 = subtitle_json_path(srt5)
+        quoted = {
+            "words": [{"w": "Dig", "zh": "挖"}],
+            "sentences": [
+                {"start": 0.0, "end": 1.0, "en": "\"It says, 'Dig!'\" Zippy said.", "zh": "「上面写着:挖!」齐比说。"}
+            ],
+            "guide": {"goal": "听懂 dig", "before": ["x"], "after": ["y"]},
+        }
+        _write(js5, quoted)
         errs, _ = check_pair(srt5, js5)
         assert not errs, errs  # 引号撇号不算词的一部分
     print("selftest OK")
@@ -526,18 +590,16 @@ def main():
         reconf = getattr(stream, "reconfigure", None)  # TextIOWrapper 才有
         if reconf:
             reconf(encoding="utf-8", errors="replace")
-    ap = argparse.ArgumentParser(description="SRT→教学字幕 JSON 结构层工具")
+    ap = argparse.ArgumentParser(description="SRT→带学练习卡 JSON(V2.0)结构层工具")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    d = sub.add_parser("draft", help="SRT → 结构 JSON(1 cue = 1 句,en 定稿)")
+    d = sub.add_parser("draft", help="SRT → 全量句骨架(提炼候选池,en 定稿)")
     d.add_argument("path")
     d.add_argument("--force", action="store_true")
-    c = sub.add_parser("check", help="校验富化后 JSON")
+    c = sub.add_parser("check", help="校验提炼后 JSON(四板契约)")
     c.add_argument("paths", nargs="+")
-    dd = sub.add_parser("dedup", help="存量修复:就地合并成品 JSON 相邻同文句(卡拉OK重复)")
-    dd.add_argument("path")
     sub.add_parser("selftest", help="内置样例自检")
     args = ap.parse_args()
-    {"draft": cmd_draft, "check": cmd_check, "dedup": cmd_dedup, "selftest": cmd_selftest}[args.cmd](args)
+    {"draft": cmd_draft, "check": cmd_check, "selftest": cmd_selftest}[args.cmd](args)
 
 
 if __name__ == "__main__":

@@ -217,4 +217,27 @@ describe('RepeatModal 朗读 / 文本同步 / 录音切换', () => {
     expect(wrapper.find('#repeat-custom').element.value).toBe('How you doing?')
     expect(chips[0].classes()).toContain('speaking')
   })
+
+  it('显式传入 segments(亲子对话逐行)时整行跟读,不再按标点二次切分', async () => {
+    const wrapper = mount(RepeatModal, {
+      props: {
+        open: true,
+        sentence: {
+          en: "Oh no, you're in my way! Sorry! I will move.",
+          zh: '',
+          words: [],
+          segments: ["Oh no, you're in my way!", 'Sorry! I will move.'],
+        },
+      },
+    })
+
+    // 句内逗号/感叹号不再切开:一行就是一块
+    const segs = wrapper.findAll('.seg-text')
+    expect(segs.map((s) => s.text())).toEqual(["Oh no, you're in my way!", 'Sorry! I will move.'])
+
+    const chips = wrapper.findAll('.word-chip-btn')
+    await chips[0].trigger('click')
+    expect(utterances[0].text).toBe("Oh no, you're in my way!")
+    expect(wrapper.find('#repeat-custom').element.value).toBe("Oh no, you're in my way!")
+  })
 })

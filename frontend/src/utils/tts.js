@@ -69,6 +69,28 @@ export function preview(text, { voiceURI, rate } = {}) {
   synth.speak(utter)
 }
 
+// 一键朗读:按已保存的音色/语速读一句话,打断正在读的内容;结束/出错时 resolve。
+// 供练习面板对话行等场景使用;无 speechSynthesis(如 jsdom)时静默完成。
+export function speak(text) {
+  return new Promise((resolve) => {
+    if (!('speechSynthesis' in window) || !text ||
+        typeof SpeechSynthesisUtterance === 'undefined') {
+      resolve()
+      return
+    }
+    const synth = window.speechSynthesis
+    if (!synth) {
+      resolve()
+      return
+    }
+    synth.cancel()
+    const utter = configureUtterance(new SpeechSynthesisUtterance(text))
+    utter.onend = () => resolve()
+    utter.onerror = () => resolve()
+    synth.speak(utter)
+  })
+}
+
 // 预热:用指定(或当前保存)音色静默播一个空句,触发引擎初始化,消除首次朗读/试听的延迟。
 // 对本地音色有效(引擎冷启动);同时 resume() 规避 Chrome 长期闲置后首句不出声的问题。
 export function warmupTts({ voiceURI } = {}) {
